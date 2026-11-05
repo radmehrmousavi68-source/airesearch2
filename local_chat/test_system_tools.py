@@ -21,9 +21,12 @@ class SystemToolsTests(unittest.TestCase):
         self.root_patch.stop()
         self.temp.cleanup()
 
+    SESSION = "test-session-" + ("x" * 32)
+    OTHER_SESSION = "other-session-" + ("y" * 32)
+
     def approve(self, action, args):
-        prepared = system_tools.prepare_action(action, args)
-        return system_tools.approve_action(prepared["approval_id"])
+        prepared = system_tools.prepare_action(action, args, self.SESSION)
+        return system_tools.approve_action(prepared["approval_id"], self.SESSION)
 
     def test_create_project_builds_clean_structure(self):
         result = self.approve("create_project", {"name": "demo_app"})
@@ -35,7 +38,7 @@ class SystemToolsTests(unittest.TestCase):
     def test_existing_project_is_not_overwritten(self):
         (self.root / "existing").mkdir()
         with self.assertRaises(system_tools.SystemToolError):
-            system_tools.prepare_action("create_project", {"name": "existing"})
+            system_tools.prepare_action("create_project", {"name": "existing"}, self.SESSION)
 
     def test_python_file_must_be_new(self):
         self.approve("create_project", {"name": "demo"})
@@ -45,20 +48,36 @@ class SystemToolsTests(unittest.TestCase):
         with self.assertRaises(system_tools.SystemToolError):
             system_tools.prepare_action("write_python", {
                 "project": "demo", "filename": "hello.py", "content": "print('overwrite')"
-            })
+            }, self.SESSION)
 
     def test_approval_is_one_time(self):
-        prepared = system_tools.prepare_action("create_project", {"name": "once"})
-        system_tools.approve_action(prepared["approval_id"])
+        prepared = system_tools.prepare_action("create_project", {"name": "once"}, self.SESSION)
+        system_tools.approve_action(prepared["approval_id"], self.SESSION)
         with self.assertRaises(system_tools.SystemToolError):
             system_tools.approve_action(prepared["approval_id"])
+
+    def test_approval_is_bound_to_the_preparing_session(self):
+        prepared = system_tools.prepare_action("create_project", {"name": "session_bound"}, self.SESSION)
+        with self.assertRaisesRegex(system_tools.SystemToolError, "نشست"):
+            system_tools.approve_action(prepared["approval_id"], self.OTHER_SESSION)
+        self.assertFalse((self.root / "session_bound").exists())
+        system_tools.approve_action(prepared["approval_id"], self.SESSION)
+
+    def test_reject_is_bound_to_the_preparing_session(self):
+        prepared = system_tools.prepare_action("create_project", {"name": "session_reject"}, self.SESSION)
+        self.assertFalse(system_tools.reject_action(prepared["approval_id"], self.OTHER_SESSION))
+        self.assertTrue(system_tools.reject_action(prepared["approval_id"], self.SESSION))
+
+    def test_session_is_required_to_prepare(self):
+        with self.assertRaises(system_tools.SystemToolError):
+            system_tools.prepare_action("create_project", {"name": "no_session"}, None)
 
     def test_invalid_package_name_is_rejected(self):
         self.approve("create_project", {"name": "demo"})
         with self.assertRaises(system_tools.SystemToolError):
             system_tools.prepare_action("install_packages", {
                 "project": "demo", "packages": ["requests;invalid"]
-            })
+            }, self.SESSION)
 
     def test_run_python_is_blocked_until_sandbox_exists(self):
         self.approve("create_project", {"name": "blocked_run"})
@@ -69,7 +88,7 @@ class SystemToolsTests(unittest.TestCase):
         with self.assertRaisesRegex(system_tools.SystemToolError, "sandbox"):
             system_tools.prepare_action("run_python", {
                 "project": "blocked_run", "filename": "hello.py"
-            })
+            }, self.SESSION)
 
     def test_install_packages_is_blocked_until_sandbox_exists(self):
         self.approve("create_project", {"name": "blocked_install"})
@@ -77,7 +96,7 @@ class SystemToolsTests(unittest.TestCase):
         with self.assertRaisesRegex(system_tools.SystemToolError, "sandbox"):
             system_tools.prepare_action("install_packages", {
                 "project": "blocked_install", "packages": ["requests==2.32.3"]
-            })
+            }, self.SESSION)
 
 
 if __name__ == "__main__":

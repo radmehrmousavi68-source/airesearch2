@@ -181,3 +181,14 @@ button { color: inherit; }
 .mode-button.active { background: #222; color: #fff; }
 .mode-button:focus-visible { outline: 2px solid #777; outline-offset: 2px; }
 @media (max-width: 520px) { .composer-tools { flex-wrap: wrap; } .search-privacy-note { display: none; } }
+
+
+.system-approval-area { width: min(760px, calc(100% - 36px)); margin: 0 auto; }
+.system-approval-card { margin: 8px 0 18px; padding: 15px; border: 1px solid #e3d9bd; border-radius: 13px; background: #fffdf7; }
+.system-approval-card h3 { margin: 0 0 8px; font-size: 13px; }
+.system-approval-card p { margin: 5px 0; color: #555; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.system-approval-card pre { max-height: 180px; overflow: auto; padding: 10px; border-radius: 8px; background: #f4f3ef; direction: ltr; text-align: left; white-space: pre-wrap; font: 10px/1.6 Consolas, monospace; }
+.system-approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.system-approval-actions button { min-height: 34px; padding: 0 13px; border: 1px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; font: inherit; font-size: 11px; }
+.system-approval-actions .approve { border-color: #237b5d; background: #237b5d; color: #fff; }
+.system-approval-actions button:disabled { opacity: .55; cursor: wait; }

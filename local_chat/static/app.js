@@ -31,6 +31,102 @@ let identityVerified = false;
 let identityReady = false;
 let modelsReady = false;
 let toastTimer;
+let csrfToken = "";
+
+async function apiFetch(url, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (method !== "GET" && method !== "HEAD") {
+    if (!csrfToken) throw new Error("نشست امنیتی آماده نیست؛ صفحه را تازه‌سازی کنید.");
+    headers.set("X-CSRF-Token", csrfToken);
+  }
+  return fetch(url, { ...options, headers, credentials: "same-origin" });
+}
+
+async function initializeSession() {
+  const response = await fetch("/api/session", { credentials: "same-origin", cache: "no-store" });
+  const data = await response.json();
+  if (!response.ok || typeof data.csrf_token !== "string" || data.csrf_token.length < 32) {
+    throw new Error(data.error || "ساخت نشست امن ناموفق بود.");
+  }
+  csrfToken = data.csrf_token;
+}
+
+const SYSTEM_ACTION_LABELS = {
+  create_project: "ساخت پروژهٔ جدید",
+  create_venv: "ساخت محیط مجازی",
+  write_python: "ایجاد فایل Python",
+};
+
+async function prepareSystemAction(action, args) {
+  if (!csrfToken || !identityVerified || chatMode !== "programming") {
+    throw new Error("ابزارهای محلی فقط پس از تأیید هویت و در حالت برنامه‌نویسی در دسترس‌اند.");
+  }
+  const response = await apiFetch("/api/system-tools/prepare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, args }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "آماده‌سازی عملیات ناموفق بود.");
+  renderSystemApproval(data);
+  return data;
+}
+
+function renderSystemApproval(prepared) {
+  const area = document.getElementById("systemApprovalArea");
+  const plan = prepared.plan || {};
+  const card = document.createElement("section");
+  card.className = "system-approval-card";
+  const heading = document.createElement("h3");
+  heading.textContent = "نیازمند تأیید شما: " + (SYSTEM_ACTION_LABELS[plan.action] || "عملیات محلی");
+  const warning = document.createElement("p");
+  warning.textContent = "هیچ تغییری هنوز انجام نشده است. فقط با زدن دکمهٔ تأیید، همین عملیات اجرا می‌شود.";
+  const details = document.createElement("pre");
+  details.textContent = JSON.stringify(plan, null, 2);
+  const expiry = document.createElement("p");
+  expiry.textContent = "اعتبار این درخواست: " + Number(prepared.expires_in || 0) + " ثانیه";
+  const actions = document.createElement("div");
+  actions.className = "system-approval-actions";
+  const approve = document.createElement("button");
+  approve.className = "approve";
+  approve.type = "button";
+  approve.textContent = "تأیید و اجرا";
+  const reject = document.createElement("button");
+  reject.type = "button";
+  reject.textContent = "رد عملیات";
+  const finish = async (accepted) => {
+    approve.disabled = true;
+    reject.disabled = true;
+    try {
+      const response = await apiFetch("/api/system-tools/" + (accepted ? "approve" : "reject"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approval_id: prepared.approval_id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "ثبت تصمیم ناموفق بود.");
+      card.remove();
+      showToast(accepted ? "عملیات تأیید شد و نتیجه دریافت شد." : "عملیات رد شد؛ تغییری انجام نشد.");
+      if (accepted) {
+        const outcome = document.createElement("p");
+        outcome.textContent = JSON.stringify(result);
+        area.append(outcome);
+      }
+    } catch (error) {
+      approve.disabled = false;
+      reject.disabled = false;
+      showToast(error.message || "عملیات انجام نشد.");
+    }
+  };
+  approve.addEventListener("click", () => finish(true));
+  reject.addEventListener("click", () => finish(false));
+  actions.append(approve, reject);
+  card.append(heading, warning, details, expiry, actions);
+  area.replaceChildren(card);
+}
+
+window.prepareLocalSystemAction = prepareSystemAction;
 
 function loadConversations() {
   try {
@@ -133,7 +229,7 @@ async function sendIdentityCode() {
   resendIdentityButton.disabled = true;
   setIdentityStatus("در حال آماده‌سازی کد تأیید…");
   try {
-    const response = await fetch("/api/identity/start", { method: "POST" });
+    const response = await apiFetch("/api/identity/start", { method: "POST" });
     const data = await response.json();
     if (response.status === 200 && data.verified) {
       acceptCreatorIdentity(data.profile);
@@ -352,7 +448,7 @@ async function streamReply(chat, body) {
     });
   }
 
-  const response = await fetch("/api/chat", {
+  const response = await apiFetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -395,7 +491,7 @@ async function streamReply(chat, body) {
 }
 
 async function searchWeb(query, signal) {
-  const response = await fetch("/api/search", {
+  const response = await apiFetch("/api/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
@@ -501,7 +597,7 @@ async function refreshMemoryList() {
       remove.type = "button";
       remove.textContent = "حذف";
       remove.addEventListener("click", async () => {
-        const result = await fetch("/api/memory/forget", {
+        const result = await apiFetch("/api/memory/forget", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: item.content }),
@@ -574,7 +670,7 @@ identityForm.addEventListener("submit", async (event) => {
   verifyIdentityButton.disabled = true;
   setIdentityStatus("در حال بررسی کد…");
   try {
-    const response = await fetch("/api/identity/verify", {
+    const response = await apiFetch("/api/identity/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: identityCode.value.trim() }),
@@ -663,6 +759,14 @@ memoryOverlay.addEventListener("click", (event) => {
   if (event.target === memoryOverlay) memoryOverlay.hidden = true;
 });
 
-renderConversation();
-loadModels();
-initializeCreatorIdentity();
+(async () => {
+  renderConversation();
+  try {
+    await initializeSession();
+    await Promise.all([loadModels(), initializeCreatorIdentity()]);
+  } catch (error) {
+    setConnection(false, "نشست امن آماده نیست");
+    setIdentityStatus(error.message || "راه‌اندازی نشست امن ناموفق بود.", "error");
+    identityOverlay.hidden = false;
+  }
+})();

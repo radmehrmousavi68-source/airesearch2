@@ -118,7 +118,9 @@ def _plan(action, args):
     raise SystemToolError("این نوع عملیات در فهرست مجاز نیست.")
 
 
-def prepare_action(action, args):
+def prepare_action(action, args, session_id):
+    if not isinstance(session_id, str) or len(session_id) < 32:
+        raise SystemToolError("نشست معتبر برای آماده‌سازی عملیات لازم است.")
     plan = _plan(action, args)
     token = secrets.token_urlsafe(24)
     now = time.monotonic()
@@ -126,7 +128,7 @@ def prepare_action(action, args):
         for key, item in list(_pending.items()):
             if item["expires"] < now:
                 _pending.pop(key, None)
-        _pending[token] = {"plan": plan, "expires": now + APPROVAL_TTL}
+        _pending[token] = {"plan": plan, "expires": now + APPROVAL_TTL, "session_id": session_id}
     preview = {key: value for key, value in plan.items() if key != "content"}
     if "content" in plan:
         preview["content_preview"] = plan["content"][:4000]
@@ -135,15 +137,22 @@ def prepare_action(action, args):
             "message": "این عملیات هنوز اجرا نشده است؛ فقط پس از تأیید صریح کاربر اجرا می‌شود."}
 
 
-def reject_action(token):
+def reject_action(token, session_id):
     with _lock:
-        return _pending.pop(token, None) is not None
+        item = _pending.get(token)
+        if not item or not secrets.compare_digest(item["session_id"], str(session_id or "")):
+            return False
+        _pending.pop(token, None)
+        return True
 
 
-def approve_action(token):
+def approve_action(token, session_id):
     with _lock:
-        item = _pending.pop(token, None)
-    if not item or item["expires"] < time.monotonic():
+        item = _pending.get(token)
+        if not item or not secrets.compare_digest(item["session_id"], str(session_id or "")):
+            raise SystemToolError("این درخواست متعلق به نشست فعلی نیست یا وجود ندارد.")
+        _pending.pop(token, None)
+    if item["expires"] < time.monotonic():
         raise SystemToolError("درخواست تأیید وجود ندارد یا منقضی شده است؛ دوباره درخواست بدهید.")
     plan = item["plan"]
     action = plan["action"]

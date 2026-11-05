@@ -2,6 +2,7 @@ import concurrent.futures
 import hashlib
 import hmac
 import http.client
+from http.cookies import SimpleCookie, CookieError
 import html
 import ipaddress
 import json
@@ -80,6 +81,38 @@ CODE_LIFETIME_SECONDS = 10 * 60
 CODE_RESEND_SECONDS = 60
 CODE_MAX_ATTEMPTS = 5
 IDENTITY_LOCK = threading.Lock()
+BROWSER_SESSION_TTL = 12 * 60 * 60
+BROWSER_SESSION_COOKIE = "localchat_session"
+BROWSER_SESSIONS = {}
+BROWSER_SESSIONS_LOCK = threading.RLock()
+
+
+def _new_browser_session():
+    now = time.monotonic()
+    session_id = secrets.token_urlsafe(32)
+    csrf_token = secrets.token_urlsafe(32)
+    with BROWSER_SESSIONS_LOCK:
+        for key, item in list(BROWSER_SESSIONS.items()):
+            if item["expires"] <= now:
+                BROWSER_SESSIONS.pop(key, None)
+        BROWSER_SESSIONS[session_id] = {
+            "csrf": csrf_token,
+            "expires": now + BROWSER_SESSION_TTL,
+        }
+    return session_id, csrf_token
+
+
+def _browser_session(session_id):
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    now = time.monotonic()
+    with BROWSER_SESSIONS_LOCK:
+        item = BROWSER_SESSIONS.get(session_id)
+        if not item or item["expires"] <= now:
+            BROWSER_SESSIONS.pop(session_id, None)
+            return None
+        item["expires"] = now + BROWSER_SESSION_TTL
+        return item
 
 
 class IdentityError(Exception):
@@ -857,6 +890,29 @@ class ChatHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _validate_browser_post(self):
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin", "")
+        parsed = urlsplit(origin)
+        if (not host or parsed.scheme != "http" or parsed.netloc.lower() != host.lower()
+                or parsed.username is not None or parsed.password is not None):
+            self._send_json(403, {"error": "مبدأ درخواست معتبر نیست؛ صفحه را از نشانی محلی برنامه باز کنید."})
+            return False
+        try:
+            cookies = SimpleCookie()
+            cookies.load(self.headers.get("Cookie", ""))
+            morsel = cookies.get(BROWSER_SESSION_COOKIE)
+            session_id = morsel.value if morsel else None
+        except (CookieError, ValueError):
+            session_id = None
+        session = _browser_session(session_id)
+        supplied = self.headers.get("X-CSRF-Token", "")
+        if not session or not supplied or not hmac.compare_digest(supplied, session["csrf"]):
+            self._send_json(403, {"error": "نشست یا توکن امنیتی معتبر نیست؛ صفحه را تازه‌سازی کنید."})
+            return False
+        self.browser_session_id = session_id
+        return True
+
     def _deny_creator(
         self, message="ابتدا هویت سازنده را تأیید کنید.", discard_body=False
     ):
@@ -880,6 +936,17 @@ class ChatHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == "/api/session":
+            session_id, csrf_token = _new_browser_session()
+            body = json.dumps({"csrf_token": csrf_token}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Set-Cookie", BROWSER_SESSION_COOKIE + "=" + session_id + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + str(BROWSER_SESSION_TTL))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == "/api/status":
             self._send_json(200, {"version": APP_VERSION})
             return
@@ -1042,6 +1109,8 @@ class ChatHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
+        if not self._validate_browser_post():
+            return
         if path == "/api/identity/start":
             self._start_identity_verification()
             return
@@ -1060,13 +1129,13 @@ class ChatHandler(BaseHTTPRequestHandler):
                 return
             try:
                 if path.endswith("/prepare"):
-                    result = prepare_action(payload.get("action"), payload.get("args", {}))
+                    result = prepare_action(payload.get("action"), payload.get("args", {}), self.browser_session_id)
                     self._send_json(202, result)
                 elif path.endswith("/approve"):
-                    result = approve_action(payload.get("approval_id"))
+                    result = approve_action(payload.get("approval_id"), self.browser_session_id)
                     self._send_json(200, result)
                 else:
-                    rejected = reject_action(payload.get("approval_id"))
+                    rejected = reject_action(payload.get("approval_id"), self.browser_session_id)
                     self._send_json(200, {"rejected": rejected})
             except SystemToolError as exc:
                 self._send_json(400, {"error": str(exc)})
