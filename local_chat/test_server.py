@@ -691,6 +691,7 @@ class ChatServerTests(unittest.TestCase):
         sent = json.loads(request.data)
         self.assertEqual(sent["options"]["num_ctx"], 4096)
         self.assertTrue(sent["stream"])
+        self.assertNotIn("tools", sent)
         self.assertNotIn(CREATOR["name"], json.dumps(sent["messages"], ensure_ascii=False))
         self.assertNotIn("DuckDuckGo", json.dumps(sent["messages"], ensure_ascii=False))
 
