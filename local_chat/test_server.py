@@ -206,6 +206,8 @@ class ChatServerTests(unittest.TestCase):
                 "INSERT INTO creator_identity VALUES (1, ?, ?, ?, ?)", creator
             )
 
+        connection.close()
+
         from local_chat.server import _registered_creator
 
         migrated = _registered_creator()
@@ -312,6 +314,7 @@ class ChatServerTests(unittest.TestCase):
                         "/api/chat",
                         {
                             "model": "qwen3:14b",
+                            "mode": "programming",
                             "messages": [{"role": "user", "content": question}],
                         },
                     )

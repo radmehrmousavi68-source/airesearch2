@@ -55,6 +55,8 @@ class BrowserSessionTests(unittest.TestCase):
                 self.headers_sent.append((name, value))
             def end_headers(self):
                 return None
+            def _write_chat_event(self, payload):
+                server.ChatHandler._write_chat_event(self, payload)
 
         handler = HandlerStub()
         prepared = {"approval_id": "tool-approval-1", "expires_in": 300,
