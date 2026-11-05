@@ -139,6 +139,13 @@ PROGRAMMING_TOOL_DEFINITIONS = [
             "content": {"type": "string", "description": "Complete source code for the new file."}
         }},
     }},
+    {"type": "function", "function": {
+        "name": "docker_test",
+        "description": "Run standard-library unittest tests in a temporary resource-limited Docker container, with networking disabled and the workspace read-only. Requires approval.",
+        "parameters": {"type": "object", "required": ["project"], "properties": {
+            "project": {"type": "string", "description": "Existing managed project slug."}
+        }},
+    }},
 ]
 MAX_TOOL_ROUNDS = 8
 MAX_PENDING_CHAT_APPROVALS = 8
@@ -1236,7 +1243,7 @@ class ChatHandler(BaseHTTPRequestHandler):
                             arguments = json.loads(arguments)
                         except json.JSONDecodeError:
                             arguments = None
-                    if tool_name not in {"create_project", "create_venv", "write_python"} or not isinstance(arguments, dict):
+                    if tool_name not in {"create_project", "create_venv", "write_python", "docker_test"} or not isinstance(arguments, dict):
                         tool_result = {"ok": False, "error": "درخواست ابزار نامعتبر یا خارج از فهرست مجاز است."}
                     else:
                         try:
