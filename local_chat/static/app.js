@@ -56,6 +56,7 @@ const SYSTEM_ACTION_LABELS = {
   create_project: "ساخت پروژهٔ جدید",
   create_venv: "ساخت محیط مجازی",
   write_python: "ایجاد فایل Python",
+  docker_test: "اجرای تست ایزوله با Docker",
 };
 
 async function prepareSystemAction(action, args) {
