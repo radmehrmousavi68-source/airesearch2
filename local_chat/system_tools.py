@@ -187,7 +187,7 @@ def approve_action(token, session_id):
             raise SystemToolError("مسیر src پس از پیش‌نمایش تغییر کرده یا معتبر نیست.")
         target = src_root / plan["filename"]
         try:
-            with target.open("x", encoding="utf-8", newline="\\n") as output:
+            with target.open("x", encoding="utf-8", newline="\n") as output:
                 output.write(plan["content"])
         except FileExistsError as exc:
             raise SystemToolError("فایل پس از نمایش تأیید ایجاد شده است؛ هیچ فایلی بازنویسی نشد.") from exc
