@@ -130,7 +130,7 @@ class SystemToolsTests(unittest.TestCase):
         self.assertIn("--read-only", docker_command)
         self.assertIn("--cap-drop", docker_command)
         self.assertIn("--rm", docker_command)
-        self.assertEqual(docker_command[-6:], ["python", "-m", "unittest", "discover", "-s", "tests", "-v"])
+        self.assertEqual(docker_command[-7:], ["python", "-m", "unittest", "discover", "-s", "tests", "-v"])
 
     def test_docker_test_never_falls_back_when_engine_is_unavailable(self):
         self.approve("create_project", {"name": "docker_offline"})
