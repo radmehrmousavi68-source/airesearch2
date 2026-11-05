@@ -114,6 +114,68 @@ def _browser_session(session_id):
         return item
 
 
+
+PROGRAMMING_TOOL_DEFINITIONS = [
+    {"type": "function", "function": {
+        "name": "create_project",
+        "description": "Prepare a new isolated Python project folder. Requires explicit user approval.",
+        "parameters": {"type": "object", "required": ["name"], "properties": {
+            "name": {"type": "string", "description": "Lowercase project slug."}
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "create_venv",
+        "description": "Prepare a Python virtual environment inside an existing project. Requires explicit user approval.",
+        "parameters": {"type": "object", "required": ["project"], "properties": {
+            "project": {"type": "string", "description": "Existing project slug."}
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "write_python",
+        "description": "Prepare creation of a new Python source file. Existing files are never overwritten. Requires explicit user approval.",
+        "parameters": {"type": "object", "required": ["project", "filename", "content"], "properties": {
+            "project": {"type": "string"},
+            "filename": {"type": "string", "description": "Simple .py filename."},
+            "content": {"type": "string", "description": "Complete source code for the new file."}
+        }},
+    }},
+]
+MAX_TOOL_ROUNDS = 8
+MAX_PENDING_CHAT_APPROVALS = 8
+CHAT_APPROVAL_WAITERS = {}
+CHAT_APPROVAL_WAITERS_LOCK = threading.RLock()
+
+
+def _register_chat_approval(approval_id, session_id):
+    with CHAT_APPROVAL_WAITERS_LOCK:
+        if len(CHAT_APPROVAL_WAITERS) >= MAX_PENDING_CHAT_APPROVALS:
+            return None
+        waiter = {"event": threading.Event(), "session_id": session_id, "result": None}
+        CHAT_APPROVAL_WAITERS[approval_id] = waiter
+        return waiter
+
+
+def _resolve_chat_approval(approval_id, session_id, result):
+    with CHAT_APPROVAL_WAITERS_LOCK:
+        waiter = CHAT_APPROVAL_WAITERS.get(approval_id)
+        if not waiter or not hmac.compare_digest(waiter["session_id"], str(session_id or "")):
+            return False
+        waiter["result"] = result
+        waiter["event"].set()
+        return True
+
+
+def _wait_for_chat_approval(approval_id, session_id, waiter):
+    try:
+        if not waiter["event"].wait(timeout=300):
+            reject_action(approval_id, session_id)
+            return {"ok": False, "error": "زمان تأیید کاربر تمام شد؛ عملیات اجرا نشد."}
+        return waiter["result"] or {"ok": False, "error": "نتیجهٔ تأیید دریافت نشد."}
+    finally:
+        with CHAT_APPROVAL_WAITERS_LOCK:
+            CHAT_APPROVAL_WAITERS.pop(approval_id, None)
+
+
 class IdentityError(Exception):
     def __init__(self, message, status=400):
         super().__init__(message)
@@ -1106,6 +1168,105 @@ class ChatHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, {"results": results})
 
+
+    def _write_chat_event(self, payload):
+        line = (json.dumps(payload, ensure_ascii=False) + "\\n").encode("utf-8")
+        self.wfile.write(line)
+        self.wfile.flush()
+
+    def _chat_with_approved_tools(self, ollama_payload):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        messages = list(ollama_payload["messages"])
+        total_calls = 0
+        try:
+            for _round in range(MAX_TOOL_ROUNDS):
+                request_payload = {
+                    **ollama_payload,
+                    "messages": messages,
+                    "stream": False,
+                    "tools": PROGRAMMING_TOOL_DEFINITIONS,
+                }
+                request = Request(
+                    f"{OLLAMA_URL}/api/chat",
+                    data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=600) as response:
+                    model_result = json.loads(response.read().decode("utf-8"))
+                message = model_result.get("message") or {}
+                tool_calls = message.get("tool_calls") or []
+                content = message.get("content") or ""
+                if content:
+                    self._write_chat_event({
+                        "message": {"role": "assistant", "content": content},
+                        "done": False,
+                    })
+                if not tool_calls:
+                    self._write_chat_event({
+                        "message": {"role": "assistant", "content": ""},
+                        "done": True,
+                        "done_reason": model_result.get("done_reason", "stop"),
+                    })
+                    return
+                messages.append({
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": tool_calls,
+                })
+                for call in tool_calls:
+                    total_calls += 1
+                    if total_calls > MAX_TOOL_ROUNDS:
+                        self._write_chat_event({"error": "تعداد مراحل ابزار از حد مجاز گذشت.", "done": True})
+                        return
+                    function = call.get("function") or {}
+                    tool_name = function.get("name")
+                    arguments = function.get("arguments", {})
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            arguments = None
+                    if tool_name not in {"create_project", "create_venv", "write_python"} or not isinstance(arguments, dict):
+                        tool_result = {"ok": False, "error": "درخواست ابزار نامعتبر یا خارج از فهرست مجاز است."}
+                    else:
+                        try:
+                            prepared = prepare_action(tool_name, arguments, self.browser_session_id)
+                            waiter = _register_chat_approval(prepared["approval_id"], self.browser_session_id)
+                            if waiter is None:
+                                reject_action(prepared["approval_id"], self.browser_session_id)
+                                tool_result = {"ok": False, "error": "تعداد درخواست‌های در انتظار تأیید بیش از حد مجاز است."}
+                            else:
+                                self._write_chat_event({"approval_required": prepared})
+                                tool_result = _wait_for_chat_approval(
+                                    prepared["approval_id"], self.browser_session_id, waiter
+                                )
+                        except SystemToolError as exc:
+                            tool_result = {"ok": False, "error": str(exc)}
+                        except (OSError, subprocess.SubprocessError) as exc:
+                            tool_result = {"ok": False, "error": str(exc)[:1000]}
+                    messages.append({
+                        "role": "tool",
+                        "tool_name": tool_name or "unknown",
+                        "content": json.dumps(tool_result, ensure_ascii=False),
+                    })
+            self._write_chat_event({"error": "مدل به سقف مراحل ابزار رسید؛ برای ادامه پیام تازه‌ای بفرستید.", "done": True})
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            self._write_chat_event({"error": f"Ollama درخواست ابزار را نپذیرفت: {detail[:500]}", "done": True})
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            try:
+                self._write_chat_event({"error": f"ارتباط یا پاسخ Ollama ناموفق بود: {str(exc)[:500]}", "done": True})
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
     def do_POST(self):
         path = urlsplit(self.path).path
         if not self._validate_browser_post():
@@ -1131,16 +1292,29 @@ class ChatHandler(BaseHTTPRequestHandler):
                     result = prepare_action(payload.get("action"), payload.get("args", {}), self.browser_session_id)
                     self._send_json(202, result)
                 elif path.endswith("/approve"):
-                    result = approve_action(payload.get("approval_id"), self.browser_session_id)
+                    approval_id = payload.get("approval_id")
+                    result = approve_action(approval_id, self.browser_session_id)
+                    _resolve_chat_approval(approval_id, self.browser_session_id, result)
                     self._send_json(200, result)
                 else:
-                    rejected = reject_action(payload.get("approval_id"), self.browser_session_id)
+                    approval_id = payload.get("approval_id")
+                    rejected = reject_action(approval_id, self.browser_session_id)
+                    if rejected:
+                        _resolve_chat_approval(approval_id, self.browser_session_id, {
+                            "ok": False, "rejected": True, "error": "کاربر این عملیات را رد کرد؛ هیچ تغییری انجام نشد."
+                        })
                     self._send_json(200, {"rejected": rejected})
             except SystemToolError as exc:
+                if path.endswith("/approve"):
+                    _resolve_chat_approval(payload.get("approval_id"), self.browser_session_id, {"ok": False, "error": str(exc)})
                 self._send_json(400, {"error": str(exc)})
             except subprocess.TimeoutExpired:
+                if path.endswith("/approve"):
+                    _resolve_chat_approval(payload.get("approval_id"), self.browser_session_id, {"ok": False, "error": "زمان اجرای عملیات تمام شد."})
                 self._send_json(504, {"error": "زمان مجاز عملیات تمام شد؛ فرایند متوقف شد."})
             except (OSError, subprocess.SubprocessError) as exc:
+                if path.endswith("/approve"):
+                    _resolve_chat_approval(payload.get("approval_id"), self.browser_session_id, {"ok": False, "error": str(exc)[:1000]})
                 self._send_json(500, {"error": f"اجرای عملیات محلی ناموفق بود: {exc}"})
             return
         if path == "/api/memory":
@@ -1310,7 +1484,7 @@ class ChatHandler(BaseHTTPRequestHandler):
         )
         if mode == "programming":
             system_prompt += (
-                "حالت برنامه‌نویسی فعال است. ابزارهای محدود فعلی فقط برای ساخت پروژه، ساخت venv و ایجاد فایل جدید هستند. "
+                "حالت برنامه‌نویسی فعال است. ابزارهای واقعی مجاز فقط create_project، create_venv و write_python هستند؛ برای انجام آن‌ها از فراخوانی ابزار استفاده کن و هرگز وانمود نکن عملیاتی اجرا شده است. "
                 "اجرای کد دلخواه و نصب بسته‌ها عمداً غیرفعال‌اند تا sandbox واقعی سیستم‌عامل پیاده‌سازی و آزموده شود. "
                 "venv را sandbox فرض نکن؛ هیچ فرمان عمومی shell، PowerShell یا CMD اجرا نکن و هرگز ادعای اجرای موفق نداشته باش مگر ابزار آن را تأیید کند. "
             )
@@ -1340,6 +1514,10 @@ class ChatHandler(BaseHTTPRequestHandler):
                 "temperature": 0.55,
             },
         }
+        if mode == "programming":
+            self._chat_with_approved_tools(ollama_payload)
+            return
+
         request = Request(
             f"{OLLAMA_URL}/api/chat",
             data=json.dumps(ollama_payload, ensure_ascii=False).encode("utf-8"),

@@ -40,6 +40,15 @@ class SystemToolsTests(unittest.TestCase):
         with self.assertRaises(system_tools.SystemToolError):
             system_tools.prepare_action("create_project", {"name": "existing"}, self.SESSION)
 
+    def test_file_preview_contains_complete_content(self):
+        self.approve("create_project", {"name": "full_preview"})
+        content = "print('preview')\\n" * 500
+        prepared = system_tools.prepare_action("write_python", {
+            "project": "full_preview", "filename": "preview.py", "content": content
+        }, self.SESSION)
+        self.assertEqual(prepared["plan"]["content_preview"], content)
+        self.assertEqual(prepared["plan"]["content_bytes"], len(content.encode("utf-8")))
+
     def test_python_file_must_be_new(self):
         self.approve("create_project", {"name": "demo"})
         self.approve("write_python", {

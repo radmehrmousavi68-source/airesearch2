@@ -5,6 +5,77 @@ from local_chat import server
 
 
 class BrowserSessionTests(unittest.TestCase):
+    def test_programming_tool_allowlist_is_narrow(self):
+        names = {item["function"]["name"] for item in server.PROGRAMMING_TOOL_DEFINITIONS}
+        self.assertEqual(names, {"create_project", "create_venv", "write_python"})
+        self.assertNotIn("run_python", names)
+        self.assertNotIn("install_packages", names)
+
+    def test_chat_approval_waiter_is_bound_to_session(self):
+        approval_id = "approval-session-test"
+        with server.CHAT_APPROVAL_WAITERS_LOCK:
+            server.CHAT_APPROVAL_WAITERS.pop(approval_id, None)
+        waiter = server._register_chat_approval(approval_id, "a" * 40)
+        self.assertIsNotNone(waiter)
+        self.assertFalse(server._resolve_chat_approval(approval_id, "b" * 40, {"ok": True}))
+        self.assertTrue(server._resolve_chat_approval(approval_id, "a" * 40, {"ok": True}))
+        self.assertTrue(waiter["event"].is_set())
+        self.assertEqual(waiter["result"], {"ok": True})
+        with server.CHAT_APPROVAL_WAITERS_LOCK:
+            server.CHAT_APPROVAL_WAITERS.pop(approval_id, None)
+
+    def test_tool_loop_sends_approved_result_back_to_ollama(self):
+        import io
+
+        first = {"message": {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "create_project", "arguments": {"name": "demo"}}}
+        ]}}
+        second = {"message": {"role": "assistant", "content": "پروژه ساخته شد."}, "done": True}
+
+        class Response:
+            def __init__(self, value):
+                self.value = json.dumps(value).encode("utf-8")
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return None
+            def read(self):
+                return self.value
+
+        class HandlerStub:
+            browser_session_id = "s" * 40
+            def __init__(self):
+                self.wfile = io.BytesIO()
+                self.headers_sent = []
+                self.close_connection = False
+            def send_response(self, status):
+                self.status = status
+            def send_header(self, name, value):
+                self.headers_sent.append((name, value))
+            def end_headers(self):
+                return None
+
+        handler = HandlerStub()
+        prepared = {"approval_id": "tool-approval-1", "expires_in": 300,
+                    "plan": {"action": "create_project", "project": "demo", "path": "workspace/demo"}}
+        with patch("local_chat.server.prepare_action", return_value=prepared), \
+             patch("local_chat.server._register_chat_approval", return_value=object()), \
+             patch("local_chat.server._wait_for_chat_approval", return_value={"ok": True, "path": "workspace/demo"}), \
+             patch("local_chat.server.urlopen", side_effect=[Response(first), Response(second)]) as model_call:
+            server.ChatHandler._chat_with_approved_tools(
+                handler, {"model": "test-model", "messages": [{"role": "system", "content": "programming"}],
+                          "options": {"num_predict": 128}}
+            )
+        requests = [json.loads(call.args[0].data) for call in model_call.call_args_list]
+        self.assertEqual(requests[0]["tools"], server.PROGRAMMING_TOOL_DEFINITIONS)
+        self.assertFalse(requests[0]["stream"])
+        self.assertEqual(requests[1]["messages"][-1]["role"], "tool")
+        self.assertIn('"ok": true', requests[1]["messages"][-1]["content"])
+        frames = [json.loads(line) for line in handler.wfile.getvalue().splitlines()]
+        self.assertEqual(frames[0]["approval_required"]["approval_id"], "tool-approval-1")
+        self.assertTrue(frames[-1]["done"])
+
+
     def setUp(self):
         self.sessions_patch = patch.dict(server.BROWSER_SESSIONS, {}, clear=True)
         self.sessions_patch.start()

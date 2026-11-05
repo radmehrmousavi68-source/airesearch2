@@ -103,9 +103,19 @@ class ChatServerTests(unittest.TestCase):
         cls.thread.join()
 
     def request(self, method, path, payload=None):
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        headers = {"Content-Type": "application/json"} if payload is not None else {}
+        if method.upper() == "POST":
+            connection.request("GET", "/api/session")
+            session_response = connection.getresponse()
+            session_data = json.loads(session_response.read())
+            cookie = session_response.getheader("Set-Cookie", "").split(";", 1)[0]
+            headers.update({
+                "Origin": f"http://127.0.0.1:{self.port}",
+                "Cookie": cookie,
+                "X-CSRF-Token": session_data["csrf_token"],
+            })
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
-        headers = {"Content-Type": "application/json"} if body else {}
         connection.request(method, path, body=body, headers=headers)
         response = connection.getresponse()
         data = response.read()

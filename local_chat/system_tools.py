@@ -131,7 +131,7 @@ def prepare_action(action, args, session_id):
         _pending[token] = {"plan": plan, "expires": now + APPROVAL_TTL, "session_id": session_id}
     preview = {key: value for key, value in plan.items() if key != "content"}
     if "content" in plan:
-        preview["content_preview"] = plan["content"][:4000]
+        preview["content_preview"] = plan["content"]
         preview["content_bytes"] = len(plan["content"].encode("utf-8"))
     return {"approval_id": token, "expires_in": APPROVAL_TTL, "plan": preview,
             "message": "این عملیات هنوز اجرا نشده است؛ فقط پس از تأیید صریح کاربر اجرا می‌شود."}
@@ -170,15 +170,27 @@ def approve_action(token, session_id):
             encoding="utf-8")
         return {"ok": True, "action": action, "project": plan["project"], "path": str(project)}
     if action == "create_venv":
-        subprocess.run([sys.executable, "-m", "venv", str(project / ".venv")],
+        venv_path = project / ".venv"
+        if venv_path.exists() or venv_path.is_symlink():
+            raise SystemToolError("مسیر محیط مجازی پس از پیش‌نمایش ایجاد شده است؛ برای جلوگیری از دست‌کاری متوقف شدم.")
+        subprocess.run([sys.executable, "-m", "venv", str(venv_path)],
                        cwd=str(project), check=True, capture_output=True, text=True, timeout=180)
         return {"ok": True, "action": action, "project": plan["project"],
                 "python": str(_python(project))}
     if action == "write_python":
-        target = (project / "src" / plan["filename"]).resolve()
-        if target.exists():
-            raise SystemToolError("فایل پس از نمایش تأیید ایجاد شده است؛ برای جلوگیری از بازنویسی اجرا لغو شد.")
-        target.write_text(plan["content"], encoding="utf-8", newline="\n")
+        src = project / "src"
+        project_root = project.resolve()
+        if src.is_symlink():
+            raise SystemToolError("پوشهٔ src پس از پیش‌نمایش به پیوند نمادین تبدیل شده است.")
+        src_root = src.resolve()
+        if src_root.parent != project_root or not src_root.is_dir():
+            raise SystemToolError("مسیر src پس از پیش‌نمایش تغییر کرده یا معتبر نیست.")
+        target = src_root / plan["filename"]
+        try:
+            with target.open("x", encoding="utf-8", newline="\\n") as output:
+                output.write(plan["content"])
+        except FileExistsError as exc:
+            raise SystemToolError("فایل پس از نمایش تأیید ایجاد شده است؛ هیچ فایلی بازنویسی نشد.") from exc
         return {"ok": True, "action": action, "path": str(target)}
     if action == "install_packages":
         python = _python(project)

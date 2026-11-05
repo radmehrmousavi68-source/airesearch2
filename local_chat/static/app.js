@@ -477,6 +477,7 @@ async function streamReply(chat, body) {
       if (!line.trim()) continue;
       const chunk = JSON.parse(line);
       if (chunk.error) throw new Error(chunk.error);
+      if (chunk.approval_required) renderSystemApproval(chunk.approval_required);
       assistantMessage.content += chunk.message?.content || "";
       updateAssistant(body, assistantMessage.content);
       if (chunk.done) return;
@@ -486,6 +487,7 @@ async function streamReply(chat, body) {
   if (buffer.trim()) {
     const chunk = JSON.parse(buffer);
     if (chunk.error) throw new Error(chunk.error);
+    if (chunk.approval_required) renderSystemApproval(chunk.approval_required);
     assistantMessage.content += chunk.message?.content || "";
     updateAssistant(body, assistantMessage.content);
   }
