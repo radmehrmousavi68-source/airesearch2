@@ -143,7 +143,7 @@ def reject_action(token, session_id):
         if not item or not secrets.compare_digest(item["session_id"], str(session_id or "")):
             return False
         _pending.pop(token, None)
-        return True
+        return item["expires"] >= time.monotonic()
 
 
 def approve_action(token, session_id):

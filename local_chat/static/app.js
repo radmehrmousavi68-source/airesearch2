@@ -106,6 +106,7 @@ function renderSystemApproval(prepared) {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "ثبت تصمیم ناموفق بود.");
+      if (!accepted && result.rejected !== true) throw new Error("درخواست ردشده یا منقضی شده است؛ تغییری انجام نشد.");
       card.remove();
       showToast(accepted ? "عملیات تأیید شد و نتیجه دریافت شد." : "عملیات رد شد؛ تغییری انجام نشد.");
       if (accepted) {
