@@ -54,7 +54,7 @@ class SystemToolsTests(unittest.TestCase):
         prepared = system_tools.prepare_action("create_project", {"name": "once"}, self.SESSION)
         system_tools.approve_action(prepared["approval_id"], self.SESSION)
         with self.assertRaises(system_tools.SystemToolError):
-            system_tools.approve_action(prepared["approval_id"])
+            system_tools.approve_action(prepared["approval_id"], self.SESSION)
 
     def test_approval_is_bound_to_the_preparing_session(self):
         prepared = system_tools.prepare_action("create_project", {"name": "session_bound"}, self.SESSION)
