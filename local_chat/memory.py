@@ -1,6 +1,7 @@
 """Explicit, local-only long-term memory for LocalChat."""
 import re
 import sqlite3
+from contextlib import contextmanager
 import time
 import uuid
 from pathlib import Path
@@ -44,10 +45,15 @@ class PersistentMemory:
                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
             )""")
 
+    @contextmanager
     def _connect(self):
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
-        return db
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     @staticmethod
     def _normalize(value):
