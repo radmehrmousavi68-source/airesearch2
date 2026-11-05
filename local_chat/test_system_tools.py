@@ -60,6 +60,25 @@ class SystemToolsTests(unittest.TestCase):
                 "project": "demo", "packages": ["requests;invalid"]
             })
 
+    def test_run_python_is_blocked_until_sandbox_exists(self):
+        self.approve("create_project", {"name": "blocked_run"})
+        self.approve("create_venv", {"project": "blocked_run"})
+        self.approve("write_python", {
+            "project": "blocked_run", "filename": "hello.py", "content": "print('hello')"
+        })
+        with self.assertRaisesRegex(system_tools.SystemToolError, "sandbox"):
+            system_tools.prepare_action("run_python", {
+                "project": "blocked_run", "filename": "hello.py"
+            })
+
+    def test_install_packages_is_blocked_until_sandbox_exists(self):
+        self.approve("create_project", {"name": "blocked_install"})
+        self.approve("create_venv", {"project": "blocked_install"})
+        with self.assertRaisesRegex(system_tools.SystemToolError, "sandbox"):
+            system_tools.prepare_action("install_packages", {
+                "project": "blocked_install", "packages": ["requests==2.32.3"]
+            })
+
 
 if __name__ == "__main__":
     unittest.main()

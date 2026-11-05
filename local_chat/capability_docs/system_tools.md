@@ -1,45 +1,7 @@
-# ابزارهای محلی Python با تأیید کاربر
+# Local Python tools
 
-پروژه‌ها در مسیر `%LOCALAPPDATA%\LocalChat\projects\<project-name>\` نگهداری می‌شوند.
+Project creation, venv creation, and new Python file creation require separate user approval.
 
-ساختار هر پروژه:
-```text
-project-name/
-├── .venv/
-├── src/
-├── tests/
-├── data/
-├── output/
-├── logs/
-├── requirements.txt
-└── README.md
-```
+Package installation and arbitrary Python execution are disabled until a real operating-system sandbox is implemented and security-tested. A venv is not a sandbox: code running inside it can access files and networks available to the Windows account. No generic shell, PowerShell, or CMD command is exposed.
 
-## عملیات مجاز
-- `create_project`: ساخت پوشه‌های استاندارد و فایل‌های اولیه.
-- `create_venv`: ساخت محیط مجازی مستقل برای همان پروژه.
-- `write_python`: ایجاد فایل جدید Python در `src/`؛ فایل موجود بازنویسی نمی‌شود.
-- `install_packages`: نصب بسته‌ها در venv همان پروژه و ثبت آن‌ها در requirements.txt.
-- `run_python`: اجرای فایل موجود در `src/` با Python محیط مجازی.
-
-## گردش تأیید
-ابتدا `POST /api/system-tools/prepare` را با نام عملیات و پارامترها فراخوانی کنید. پاسخ شامل جزئیات عملیات و شناسهٔ تأیید موقت است. هیچ تغییری در مرحلهٔ آماده‌سازی رخ نمی‌دهد.
-
-پس از آنکه کاربر جزئیات را دید و صریحاً تأیید کرد، شناسه را به `POST /api/system-tools/approve` بفرستید. برای لغو از `POST /api/system-tools/reject` استفاده کنید. شناسه پس از ۵ دقیقه منقضی می‌شود و فقط یک بار قابل استفاده است. هر عملیات به تأیید مستقل نیاز دارد.
-
-نمونهٔ آماده‌سازی:
-```json
-{"action":"create_project","args":{"name":"python-lab"}}
-```
-
-## محدودیت‌های امنیتی
-- فقط عملیات فهرست‌شده پذیرفته می‌شوند؛ فرمان عمومی سیستم وجود ندارد.
-- فرایندها بدون shell و با آرایهٔ آرگومان اجرا می‌شوند.
-- نام بسته‌ها و نسخه‌ها پیش از نصب نمایش داده می‌شوند. نصب بسته ممکن است کد شخص ثالث را دریافت و اجرا کند.
-- فایل Python تأییدشده می‌تواند به فایل‌ها و شبکه دسترسی داشته باشد؛ هر اجرا جداگانه تأیید می‌خواهد.
-- زمان اجرا حداکثر ۳۰ ثانیه و زمان نصب حداکثر ۱۰ دقیقه است.
-- فایل‌های موجود بازنویسی نمی‌شوند.
-- این قابلیت sandbox امنیتی سیستم‌عامل نیست و برای کد ناشناس مناسب نیست.
-
-## وضعیت اتصال مدل
-ثبت قابلیت و API آماده‌سازی/تأیید به‌تنهایی tool-calling مدل Ollama را فعال نمی‌کند. لایهٔ چت باید در مرحلهٔ یکپارچه‌سازی، درخواست ساختاریافتهٔ مدل را به prepare بفرستد و تأیید را به‌صورت کنترل قابل مشاهده به کاربر نشان دهد. مدل نباید خودش approve را فراخوانی کند.
+The API is not yet connected to a complete Ollama tool-calling loop or interactive approval UI. The model must not claim an operation succeeded without a successful tool result.

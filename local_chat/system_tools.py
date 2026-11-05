@@ -52,6 +52,8 @@ def _python(project):
 
 
 def _plan(action, args):
+    if action in {"run_python", "install_packages"}:
+        raise SystemToolError("Blocked until an operating-system sandbox is implemented and tested.")
     if not isinstance(args, dict):
         raise SystemToolError("پارامترهای عملیات معتبر نیستند.")
     if action == "create_project":
@@ -145,6 +147,8 @@ def approve_action(token):
         raise SystemToolError("درخواست تأیید وجود ندارد یا منقضی شده است؛ دوباره درخواست بدهید.")
     plan = item["plan"]
     action = plan["action"]
+    if action in {"run_python", "install_packages"}:
+        raise SystemToolError("Blocked until an operating-system sandbox is implemented and tested.")
     project = _project_path(plan.get("project", ""))
     if action == "create_project":
         project.mkdir(parents=True, exist_ok=False)
