@@ -13,7 +13,10 @@ import threading
 import time
 from pathlib import Path
 
-from .capabilities import register_capability
+if __package__:
+    from .capabilities import register_capability
+else:
+    from capabilities import register_capability
 
 APP_DATA = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "LocalChat"
 PROJECTS_ROOT = APP_DATA / "projects"
@@ -43,8 +46,8 @@ def _project_path(name):
 
 def _python(project):
     candidate = project / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    if not candidate.is_file():
-        raise SystemToolError("محیط مجازی پروژه وجود ندارد؛ ابتدا ساخت محیط مجازی را تأیید کنید.")
+    if (project / ".venv").is_symlink() or not candidate.is_file():
+        raise SystemToolError("محیط مجازی پروژه وجود ندارد یا مسیر آن امن نیست؛ ابتدا ساخت محیط مجازی را تأیید کنید.")
     return candidate
 
 
@@ -74,6 +77,8 @@ def _plan(action, args):
             raise SystemToolError("نام پروژه یا فایل پایتون معتبر نیست.")
         if not isinstance(content, str) or not content.strip() or len(content.encode("utf-8")) > MAX_SCRIPT_BYTES:
             raise SystemToolError("محتوای فایل خالی یا بیش از ۲۵۶ کیلوبایت است.")
+        if (project / "src").is_symlink():
+            raise SystemToolError("پوشهٔ src نباید پیوند نمادین باشد.")
         target = (project / "src" / filename).resolve()
         if target.parent != (project / "src").resolve():
             raise SystemToolError("مسیر فایل خارج از src است.")
@@ -98,6 +103,8 @@ def _plan(action, args):
         python = _python(project)
         if not isinstance(filename, str) or not _FILE.fullmatch(filename):
             raise SystemToolError("فقط فایل .py با نام ساده در پوشه src قابل اجراست.")
+        if (project / "src").is_symlink():
+            raise SystemToolError("پوشهٔ src نباید پیوند نمادین باشد.")
         script = (project / "src" / filename).resolve()
         if script.parent != (project / "src").resolve() or not script.is_file():
             raise SystemToolError("فایل پایتون در پوشه src پیدا نشد.")
@@ -175,10 +182,12 @@ def approve_action(token):
                 "output": result.stdout[-MAX_OUTPUT_CHARS:]}
     if action == "run_python":
         python = _python(project)
+        if (project / "src").is_symlink():
+            raise SystemToolError("پوشهٔ src نباید پیوند نمادین باشد.")
         script = (project / "src" / plan["filename"]).resolve()
         if script.parent != (project / "src").resolve() or not script.is_file():
             raise SystemToolError("فایل پیش از اجرا تغییر کرده یا پیدا نشد.")
-        result = subprocess.run([str(python), str(script), *plan["args"]],
+        result = subprocess.run([str(python), "-I", str(script), *plan["args"]],
                                 cwd=str(project), capture_output=True, text=True, timeout=30)
         return {"ok": result.returncode == 0, "action": action,
                 "returncode": result.returncode,
