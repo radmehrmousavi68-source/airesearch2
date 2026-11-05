@@ -111,7 +111,6 @@ def _browser_session(session_id):
         if not item or item["expires"] <= now:
             BROWSER_SESSIONS.pop(session_id, None)
             return None
-        item["expires"] = now + BROWSER_SESSION_TTL
         return item
 
 

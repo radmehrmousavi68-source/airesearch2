@@ -12,7 +12,6 @@ The API and browser-side preview/approve/reject controls are implemented, but th
 Every browser POST must include a valid same-origin Origin header, an opaque
 HttpOnly SameSite=Strict session cookie, and the matching CSRF header. Prepared
 operations are bound to the browser session that created them. A different
-session cannot approve or reject the plan. Session state is in-memory and expires
-after 12 hours of inactivity; approval plans remain one-use and expire after
+session cannot approve or reject the plan. The in-memory session and browser cookie expire after 12 hours; approval plans remain one-use and expire after
 five minutes. The browser preview/approval UI is available as a client helper,
 but it is not yet connected to Ollama tool calling.
