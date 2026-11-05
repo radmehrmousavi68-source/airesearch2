@@ -220,9 +220,13 @@ def _configured_local_verification_code():
 def _identity_connect():
     IDENTITY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     if not IDENTITY_DB_PATH.exists() and LEGACY_IDENTITY_DB_PATH.is_file():
-        with sqlite3.connect(LEGACY_IDENTITY_DB_PATH, timeout=10) as source:
-            with sqlite3.connect(IDENTITY_DB_PATH, timeout=10) as destination:
-                source.backup(destination)
+        source = sqlite3.connect(LEGACY_IDENTITY_DB_PATH, timeout=10)
+        destination = sqlite3.connect(IDENTITY_DB_PATH, timeout=10)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+            source.close()
     connection = sqlite3.connect(IDENTITY_DB_PATH, timeout=10)
     connection.row_factory = sqlite3.Row
     with connection:
@@ -1170,7 +1174,7 @@ class ChatHandler(BaseHTTPRequestHandler):
 
 
     def _write_chat_event(self, payload):
-        line = (json.dumps(payload, ensure_ascii=False) + "\\n").encode("utf-8")
+        line = json.dumps(payload, ensure_ascii=False).encode("utf-8") + bytes([10])
         self.wfile.write(line)
         self.wfile.flush()
 
