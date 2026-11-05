@@ -225,8 +225,11 @@ def approve_action(token, session_id):
         ]
         result = subprocess.run(command, cwd=str(project), capture_output=True,
                                 text=True, timeout=180, errors="replace")
-        return {"ok": result.returncode == 0, "action": action,
+        combined_output = (result.stdout or "") + "\n" + (result.stderr or "")
+        zero_tests = re.search(r"Ran 0 tests", combined_output) is not None
+        return {"ok": result.returncode == 0 and not zero_tests, "action": action,
                 "project": plan["project"], "runtime": "Docker",
+                "tests_discovered": not zero_tests,
                 "returncode": result.returncode,
                 "stdout": (result.stdout or "")[-MAX_OUTPUT_CHARS:],
                 "stderr": (result.stderr or "")[-MAX_OUTPUT_CHARS:],
