@@ -113,6 +113,33 @@ class SystemToolsTests(unittest.TestCase):
                 "project": "blocked_install", "packages": ["requests==2.32.3"]
             }, self.SESSION)
 
+    def test_docker_test_uses_restricted_ephemeral_container(self):
+        self.approve("create_project", {"name": "docker_demo"})
+        completed = type("Completed", (), {"returncode": 0, "stdout": "Docker 27", "stderr": ""})()
+        run_result = type("Completed", (), {"returncode": 0, "stdout": "Ran 2 tests", "stderr": ""})()
+        with patch.object(system_tools.shutil, "which", return_value="docker"), \
+             patch.object(system_tools.subprocess, "run", side_effect=[completed, completed, run_result]) as run:
+            prepared = system_tools.prepare_action("docker_test", {"project": "docker_demo"}, self.SESSION)
+            self.assertEqual(prepared["plan"]["image"], "python:3.12-slim")
+            result = system_tools.approve_action(prepared["approval_id"], self.SESSION)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["runtime"], "Docker")
+        docker_command = run.call_args_list[-1].args[0]
+        self.assertIn("--network", docker_command)
+        self.assertIn("none", docker_command)
+        self.assertIn("--read-only", docker_command)
+        self.assertIn("--cap-drop", docker_command)
+        self.assertIn("--rm", docker_command)
+        self.assertEqual(docker_command[-6:], ["python", "-m", "unittest", "discover", "-s", "tests", "-v"])
+
+    def test_docker_test_never_falls_back_when_engine_is_unavailable(self):
+        self.approve("create_project", {"name": "docker_offline"})
+        failed = type("Completed", (), {"returncode": 1, "stdout": "", "stderr": "daemon unavailable"})()
+        with patch.object(system_tools.shutil, "which", return_value="docker"), \
+             patch.object(system_tools.subprocess, "run", return_value=failed):
+            with self.assertRaisesRegex(system_tools.SystemToolError, "Docker Engine"):
+                system_tools.prepare_action("docker_test", {"project": "docker_offline"}, self.SESSION)
+
 
 if __name__ == "__main__":
     unittest.main()
