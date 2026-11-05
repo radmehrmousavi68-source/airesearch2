@@ -8,7 +8,7 @@ from local_chat import server
 class BrowserSessionTests(unittest.TestCase):
     def test_programming_tool_allowlist_is_narrow(self):
         names = {item["function"]["name"] for item in server.PROGRAMMING_TOOL_DEFINITIONS}
-        self.assertEqual(names, {"create_project", "create_venv", "write_python"})
+        self.assertEqual(names, {"create_project", "create_venv", "write_python", "docker_test"})
         self.assertNotIn("run_python", names)
         self.assertNotIn("install_packages", names)
 
