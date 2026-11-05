@@ -221,7 +221,7 @@ class ChatServerTests(unittest.TestCase):
         ids = {capability["id"] for capability in capabilities}
         self.assertEqual(
             ids,
-            {"local_chat", "web_search", "creator_identity"},
+            {"local_chat", "web_search", "creator_identity", "approved_system_tools"},
         )
         self.assertTrue(all(capability["status"] == "available" for capability in capabilities))
         self.assertTrue(all("purpose" not in capability for capability in capabilities))
@@ -437,12 +437,21 @@ class ChatServerTests(unittest.TestCase):
                 connection = http.client.HTTPConnection(
                     "127.0.0.1", restarted_server.server_address[1], timeout=5
                 )
+                connection.request("GET", "/api/session")
+                session_response = connection.getresponse()
+                session_data = json.loads(session_response.read())
+                cookie = session_response.getheader("Set-Cookie", "").split(";", 1)[0]
                 with patch("local_chat.server.urlopen") as mock_model:
                     connection.request(
                         "POST",
                         "/api/chat",
                         chat_payload,
-                        {"Content-Type": "application/json"},
+                        {
+                            "Content-Type": "application/json",
+                            "Origin": "http://127.0.0.1:" + str(restarted_server.server_address[1]),
+                            "Cookie": cookie,
+                            "X-CSRF-Token": session_data["csrf_token"],
+                        },
                     )
                     response = connection.getresponse()
                     body = response.read()
