@@ -70,7 +70,8 @@ class SystemToolsTests(unittest.TestCase):
 
     def test_expired_approval_cannot_be_rejected_as_successful(self):
         prepared = system_tools.prepare_action("create_project", {"name": "expired_reject"}, self.SESSION)
-        with patch.object(system_tools.time, "monotonic", return_value=prepared["expires_in"] + 10_000):
+        expiry = system_tools._pending[prepared["approval_id"]]["expires"]
+        with patch.object(system_tools.time, "monotonic", return_value=expiry + 1):
             self.assertFalse(system_tools.reject_action(prepared["approval_id"], self.SESSION))
 
     def test_session_is_required_to_prepare(self):
