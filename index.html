@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#212121">
+  <title>گفت‌وگوی محلی</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <a class="brand" href="/" aria-label="صفحهٔ گفت‌وگوی جدید">
+          <span class="brand-mark">✳</span><span>گفت‌وگوی محلی</span>
+        </a>
+        <button class="icon-button mobile-close" id="closeSidebar" aria-label="بستن فهرست">×</button>
+      </div>
+      <button class="new-chat-button" id="newChat">
+        <span class="plus-icon">＋</span><span>گفت‌وگوی جدید</span>
+        <span class="shortcut">Ctrl K</span>
+      </button>
+      <div class="history-heading">گفت‌وگوهای اخیر</div>
+      <nav class="chat-list" id="chatList" aria-label="گفت‌وگوهای قبلی"></nav>
+      <div class="sidebar-bottom">
+        <button class="memory-entry" id="memoryButton" type="button">حافظهٔ بلندمدت من</button>
+        <div class="local-note"><span class="status-dot"></span><span>مدل‌ها روی دستگاه شما اجرا می‌شوند</span></div>
+        <div class="hardware-note">مناسب RTX 3060 · زمینهٔ ۴۰۹۶ توکن</div>
+        <div class="creator-badge" id="creatorBadge" hidden><span>✦</span><span id="creatorBadgeText"></span></div>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="openSidebar" aria-label="نمایش فهرست گفت‌وگوها">☰</button>
+        <div class="model-picker">
+          <select id="modelSelect" aria-label="انتخاب مدل" disabled>
+            <option>در حال دریافت مدل‌ها…</option>
+          </select>
+          <span class="model-chevron">⌄</span>
+        </div>
+        <div class="connection-state" id="connectionState"><span class="status-dot"></span><span>در حال اتصال</span></div>
+      </header>
+
+      <section class="conversation" id="conversation" aria-live="polite">
+        <div class="welcome" id="welcome">
+          <div class="welcome-mark">✳</div>
+          <h1>امروز چه چیزی در ذهنته؟</h1>
+          <p>یک مدل محلی انتخاب کن و گفت‌وگو را شروع کن. پیام‌ها در مرورگر می‌مانند؛ فقط درخواست‌های جست‌وجوی وب یا اطلاعات روزآمد به اینترنت فرستاده می‌شوند.</p>
+          <div class="suggestions">
+            <button class="suggestion" data-prompt="یک برنامهٔ روزانهٔ ساده و واقع‌بینانه برایم پیشنهاد بده."><span>✦</span><span>برای برنامه‌ریزی روزانه کمکم کن</span></button>
+            <button class="suggestion" data-prompt="مفهوم یادگیری ماشین را با یک مثال ساده توضیح بده."><span>⌘</span><span>یک مفهوم پیچیده را ساده توضیح بده</span></button>
+            <button class="suggestion" data-prompt="چند ایده برای یک پروژهٔ کوچک برنامه‌نویسی پیشنهاد بده."><span>⌁</span><span>برای یک پروژه ایده بده</span></button>
+            <button class="suggestion" data-prompt="این متن را خلاصه کن و نکته‌های مهمش را فهرست کن: "><span>≡</span><span>متن یا ایده‌ای را خلاصه کن</span></button>
+          </div>
+        </div>
+        <div class="messages" id="messages"></div>
+      </section>
+
+      <footer class="composer-area">
+        <div class="composer-tools">
+          <button class="web-search-button" id="webSearchButton" type="button" aria-pressed="false" title="پرسش جست‌وجو به DuckDuckGo فرستاده می‌شود">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4M11 7v8M7 11h8"></path></svg>
+            <span>جست‌وجوی وب</span><span class="search-provider-label">DuckDuckGo</span>
+          </button>
+          <span class="search-privacy-note">برای جست‌وجو به اینترنت فرستاده می‌شود</span>
+        </div>
+        <form class="composer" id="composer">
+          <textarea id="messageInput" rows="1" maxlength="20000" placeholder="پیامی بنویس…" aria-label="متن پیام" disabled></textarea>
+          <button class="send-button" id="sendButton" type="submit" aria-label="ارسال پیام" disabled>
+            <svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-7 7 7-7 7 7"/></svg>
+            <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+        </form>
+        <p class="disclaimer">پاسخ‌های هوش مصنوعی ممکن است دقیق نباشند. برای اطلاعات مهم، پاسخ را بررسی کن.</p>
+      </footer>
+    </main>
+  </div>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+  <div class="identity-overlay" id="identityOverlay" hidden>
+    <section class="identity-card" role="dialog" aria-modal="true" aria-labelledby="identityTitle">
+      <div class="identity-mark">✦</div>
+      <h2 id="identityTitle">تأیید سازندهٔ اصلی</h2>
+      <p class="identity-description">کد شش‌رقمی محلی را از فایل تنظیمات بخوانید و اینجا وارد کنید.</p>
+      <p class="identity-email" id="identityEmail">seyyedalirezamousavi1368@gmail.com</p>
+      <p class="identity-status" id="identityStatus" role="status">در حال بررسی وضعیت تأیید…</p>
+      <form class="identity-form" id="identityForm">
+        <label for="identityCode">کد ۶ رقمی ایمیل</label>
+        <input id="identityCode" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="مثلاً 123456" required>
+        <button class="button-primary" id="verifyIdentityButton" type="submit">تأیید و ثبت سازنده</button>
+      </form>
+      <button class="identity-resend" id="resendIdentityCode" type="button">ارسال یا ارسال دوبارهٔ کد</button>
+      <p class="identity-help">در smtp_settings.json مقدار verification_code را تنظیم کنید. این روش فقط برای استفادهٔ محلی است و مالکیت ایمیل را اثبات نمی‌کند.</p>
+    </section>
+  </div>
+  <div class="memory-overlay" id="memoryOverlay" hidden>
+    <section class="memory-card" role="dialog" aria-modal="true" aria-labelledby="memoryTitle">
+      <button class="memory-close" id="closeMemory" type="button" aria-label="بستن">×</button>
+      <h2 id="memoryTitle">حافظهٔ بلندمدت</h2>
+      <p>فقط مواردی در این فهرست می‌مانند که صریحاً خواسته‌ای ذخیره شوند. اطلاعات روی همین رایانه نگهداری می‌شود.</p>
+      <div class="memory-list" id="memoryList"></div>
+      <div class="memory-help">برای ذخیره بگو «یادت باشه ...» و برای حذف بگو «این رو فراموش کن ...».</div>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
