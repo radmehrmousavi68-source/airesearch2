@@ -9,6 +9,7 @@ const messageInput = document.getElementById("messageInput");
 const sendButton = document.getElementById("sendButton");
 const toastElement = document.getElementById("toast");
 const webSearchButton = document.getElementById("webSearchButton");
+const modeButtons = [...document.querySelectorAll("[data-chat-mode]")];
 const identityOverlay = document.getElementById("identityOverlay");
 const identityStatus = document.getElementById("identityStatus");
 const identityCode = document.getElementById("identityCode");
@@ -25,6 +26,7 @@ let conversations = loadConversations();
 let activeConversationId = null;
 let generationController = null;
 let webSearchEnabled = false;
+let chatMode = "general";
 let identityVerified = false;
 let identityReady = false;
 let modelsReady = false;
@@ -355,6 +357,7 @@ async function streamReply(chat, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: modelSelect.value,
+      mode: chatMode,
       messages: requestMessages,
     }),
     signal: generationController.signal,
@@ -591,6 +594,24 @@ resendIdentityButton.addEventListener("click", sendIdentityCode);
 identityCode.addEventListener("input", () => {
   identityCode.value = identityCode.value.replace(/\D/g, "").slice(0, 6);
 });
+modeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    if (generationController) return;
+    chatMode = button.dataset.chatMode === "programming" ? "programming" : "general";
+    modeButtons.forEach((item) => {
+      const active = item === button;
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-pressed", String(active));
+    });
+    messageInput.placeholder = chatMode === "programming"
+      ? "درخواست برنامه‌نویسی‌ات را بنویس…"
+      : "پیامی بنویس…";
+    showToast(chatMode === "programming"
+      ? "حالت برنامه‌نویسی فعال شد؛ اجرای کد و نصب بسته‌ها فعلاً مسدود است."
+      : "حالت گفت‌وگوی عمومی فعال شد.");
+  });
+});
+
 webSearchButton.addEventListener("click", () => {
   webSearchEnabled = !webSearchEnabled;
   webSearchButton.setAttribute("aria-pressed", String(webSearchEnabled));
