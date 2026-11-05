@@ -72,6 +72,20 @@ def _plan(action, args):
             raise SystemToolError("محیط مجازی از قبل وجود دارد؛ چیزی بازنویسی نمی‌شود.")
         return {"action": action, "project": name, "path": str(project / ".venv"),
                 "command": f'"{sys.executable}" -m venv "{project / ".venv"}"'}
+    if action == "docker_test":
+        name = args.get("project")
+        project = _project_path(name)
+        if not project.is_dir() or project.is_symlink():
+            raise SystemToolError("پروژه پیدا نشد یا مسیر آن امن نیست.")
+        if shutil.which("docker") is None:
+            raise SystemToolError("Docker CLI پیدا نشد؛ Docker Desktop را اجرا و PATH را بررسی کنید.")
+        probe = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
+                               capture_output=True, text=True, timeout=15)
+        if probe.returncode != 0 or not probe.stdout.strip():
+            raise SystemToolError("Docker Engine در دسترس نیست؛ Docker Desktop را اجرا کنید.")
+        return {"action": action, "project": name, "path": str(project),
+                "image": "python:3.12-slim",
+                "command": "کانتینر موقت Python؛ شبکه خاموش، mount فقط‌خواندنی، محدودیت منابع؛ unittest discover و حذف خودکار"}
     if action == "write_python":
         name, filename, content = args.get("project"), args.get("filename"), args.get("content")
         project = _project_path(name)
@@ -156,8 +170,6 @@ def approve_action(token, session_id):
         raise SystemToolError("درخواست تأیید وجود ندارد یا منقضی شده است؛ دوباره درخواست بدهید.")
     plan = item["plan"]
     action = plan["action"]
-    if action in {"run_python", "install_packages"}:
-        raise SystemToolError("Blocked until an operating-system sandbox is implemented and tested.")
     project = _project_path(plan.get("project", ""))
     if action == "create_project":
         project.mkdir(parents=True, exist_ok=False)
@@ -192,6 +204,34 @@ def approve_action(token, session_id):
         except FileExistsError as exc:
             raise SystemToolError("فایل پس از نمایش تأیید ایجاد شده است؛ هیچ فایلی بازنویسی نشد.") from exc
         return {"ok": True, "action": action, "path": str(target)}
+    if action == "docker_test":
+        if shutil.which("docker") is None:
+            raise SystemToolError("Docker CLI پیدا نشد.")
+        if project.is_symlink() or not project.is_dir():
+            raise SystemToolError("مسیر پروژه پس از تأیید تغییر کرده است.")
+        probe = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
+                               capture_output=True, text=True, timeout=15)
+        if probe.returncode != 0:
+            raise SystemToolError("Docker Engine در دسترس نیست؛ اجرای جایگزین روی میزبان انجام نمی‌شود.")
+        command = [
+            "docker", "run", "--rm", "--pull=missing",
+            "--network", "none", "--read-only",
+            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--pids-limit", "64", "--memory", "512m", "--cpus", "1",
+            "--mount", f"type=bind,src={project.resolve()},dst=/workspace,readonly",
+            "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+            "--workdir", "/workspace",
+            "python:3.12-slim", "python", "-m", "unittest", "discover", "-s", "tests", "-v",
+        ]
+        result = subprocess.run(command, cwd=str(project), capture_output=True,
+                                text=True, timeout=180, errors="replace")
+        return {"ok": result.returncode == 0, "action": action,
+                "project": plan["project"], "runtime": "Docker",
+                "returncode": result.returncode,
+                "stdout": (result.stdout or "")[-MAX_OUTPUT_CHARS:],
+                "stderr": (result.stderr or "")[-MAX_OUTPUT_CHARS:],
+                "network": "disabled", "workspace_mount": "read-only",
+                "container": "ephemeral; removed automatically"}
     if action == "install_packages":
         python = _python(project)
         result = subprocess.run([str(python), "-m", "pip", "install", *plan["packages"]],
@@ -232,8 +272,9 @@ def approve_action(token, session_id):
     inputs=("نام پروژه", "نام فایل و محتوای Python", "فهرست بسته‌ها", "تأیید صریح هر عملیات"),
     outputs=("پروژهٔ مرتب", "محیط مجازی", "فایل Python", "گزارش نصب یا اجرای برنامه"),
     dependencies=("Python نصب‌شده روی سیستم", "فضای دیسک محلی", "دسترسی اینترنت برای pip در صورت نیاز"),
-    limitations=("هیچ فرمان shell دلخواهی اجرا نمی‌شود.", "ساخت پروژه، venv و فایل نیازمند تأیید جداگانه است.",
-                 "اجرای Python و نصب بسته‌ها مسدود است تا sandbox واقعی سیستم‌عامل پیاده‌سازی و آزموده شود.",
+    limitations=("هیچ فرمان shell دلخواهی اجرا نمی‌شود.", "عملیات تغییردهنده نیازمند تأیید جداگانه است.",
+                 "اجرای تست فعلاً با کانتینر موقت Python، شبکه خاموش و mount فقط‌خواندنی انجام می‌شود.",
+                 "این نسخه unittest استاندارد را اجرا می‌کند؛ پروژه‌های نیازمند وابستگی خارجی یا pytest هنوز به مرحله نصب کنترل‌شده نیاز دارند.",
                  "venv به‌تنهایی sandbox امنیتی نیست."),
     documentation="system_tools.md",
 )
