@@ -1205,7 +1205,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             if payload["messages"][-1]["role"] == "user"
             else ""
         )
-        if capability_answer:
+        if capability_answer and payload.get("mode", "general") == "programming":
             body = (
                 json.dumps(
                     {
