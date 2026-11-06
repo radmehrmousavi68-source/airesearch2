@@ -116,20 +116,29 @@ def _extract_pptx(data, name):
 
 
 def _image_payload(data, name):
-    if len(data) > MAX_IMAGE_BYTES:
-        return None, f"[تصویر {name} به‌دلیل بزرگ‌بودن بیش از ۵ مگابایت برای تحلیل تصویری ارسال نشد.]"
+    if len(data) > MAX_FILE_BYTES:
+        return None, f"[تصویر {name} بیش از حد مجاز است.]"
     try:
-        from PIL import Image
-        with Image.open(io.BytesIO(data)) as img:
-            img.verify()
-        mime = mimetypes.guess_type(name)[0] or "image/jpeg"
-        if mime not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
-            mime = "image/jpeg"
-    except ImportError:
-        raise AttachmentError("برای اعتبارسنجی تصویر، وابستگی Pillow نصب نیست.")
+        from PIL import Image, ImageOps
+        with Image.open(io.BytesIO(data)) as source:
+            source.seek(0)
+            source = ImageOps.exif_transpose(source)
+            source.thumbnail((1400, 1400))
+            normalized = source.convert("RGB")
+            output = io.BytesIO()
+            normalized.save(output, format="JPEG", quality=78, optimize=True)
+            if output.tell() > MAX_IMAGE_BYTES:
+                normalized.thumbnail((1000, 1000))
+                output = io.BytesIO()
+                normalized.save(output, format="JPEG", quality=62, optimize=True)
+        if output.tell() > MAX_IMAGE_BYTES:
+            return None, f"[تصویر {name} پس از فشرده‌سازی همچنان بزرگ است و برای تحلیل تصویری ارسال نشد.]"
+    except ImportError as exc:
+        raise AttachmentError("برای اعتبارسنجی تصویر، وابستگی Pillow نصب نیست.") from exc
     except Exception as exc:
         raise AttachmentError(f"فایل تصویر {name} معتبر نیست: {str(exc)[:120]}") from exc
-    return {"name": name, "mime_type": mime, "data": base64.b64encode(data).decode("ascii")}, f"[تصویر پیوست‌شده: {name}؛ برای تحلیل بصری به مدل بینایی نیاز است.]"
+    return {"name": name, "mime_type": "image/jpeg",
+            "data": base64.b64encode(output.getvalue()).decode("ascii")}, f"[تصویر پیوست‌شده: {name}؛ برای تحلیل بصری به مدل بینایی نیاز است.]"
 
 
 def _pdf_page_images(data, name):
