@@ -548,7 +548,7 @@ async function sendMessage(text, attachments = []) {
     content,
     modelContent: typedContent + attachmentContext,
     attachments: attachments.map(({ name, size }) => ({ name, size })),
-    images: attachments.flatMap((file) => (file.images || []).map((image) => image.data)).slice(0, 8),
+    images: attachments.flatMap((file) => (file.images || []).map((image) => image.data)).slice(0, 4),
     webSearch: webSearchEnabled,
     sources: [],
   };
