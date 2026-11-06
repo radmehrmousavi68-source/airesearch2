@@ -136,6 +136,15 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
     if digest != expected_requirements_sha256:
         raise DockerRuntimeError("requirements.txt پس از تأیید تغییر کرده؛ دوباره پیش‌نمایش بگیرید.")
 
+    image_check = subprocess.run([docker, "image", "inspect", IMAGE],
+                                 capture_output=True, text=True, timeout=30)
+    if image_check.returncode:
+        pulled = subprocess.run([docker, "pull", IMAGE],
+                                capture_output=True, text=True, timeout=300)
+        if pulled.returncode:
+            raise DockerRuntimeError("دریافت image پایهٔ Python ناموفق بود؛\n" +
+                                     (pulled.stderr or pulled.stdout)[-MAX_LOG:])
+
     logs = []
     run_id = uuid.uuid4().hex
     with tempfile.TemporaryDirectory(prefix="localchat-docker-") as tmp:
@@ -175,7 +184,7 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
             "import importlib.util,pathlib,subprocess,sys,os,shutil; "
             "shutil.copytree('/workspace','/tmp/project',dirs_exist_ok=True,symlinks=False); "
             "os.chdir('/tmp/project'); "
-            "env=os.environ.copy(); env['PYTHONPATH']='/tmp/deps'; "
+            "env=os.environ.copy(); env['PYTHONPATH']='/tmp/deps'; sys.path.insert(0,'/tmp/deps'); "
             "req=pathlib.Path('/tmp/project/requirements.txt'); "
             "lines=[x.strip() for x in req.read_text(encoding='utf-8').splitlines() if x.strip() and not x.strip().startswith('#')] if req.is_file() else []; "
             "install=[sys.executable,'-m','pip','install','--disable-pip-version-check','--no-index','--find-links','/wheelhouse','--target','/tmp/deps','-r','/tmp/project/requirements.txt']; "
@@ -189,7 +198,7 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
         tested = _run_container(
             docker,
             [
-                "--pull=missing", "--network", "none", "--read-only",
+                "--pull=never", "--network", "none", "--read-only",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                 "--pids-limit", "64", "--memory", "768m", "--cpus", "1.5",
                 "--tmpfs", "/tmp:rw,nosuid,size=256m",
