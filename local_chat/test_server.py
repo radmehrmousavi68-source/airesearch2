@@ -734,7 +734,7 @@ class ChatServerTests(unittest.TestCase):
     def test_programming_error_report_uses_diagnostic_path_without_tools(self, mock_urlopen):
         self.register_creator()
         mock_urlopen.return_value = FakeResponse(
-            b'{"message":{"content":"علت خطا پیدا شد"},"done":true}\n'
+            '{"message":{"content":"علت خطا پیدا شد"},"done":true}'.encode("utf-8") + b"\\n"
         )
         status, body = self.request(
             "POST", "/api/chat",
