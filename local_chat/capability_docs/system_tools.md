@@ -2,13 +2,21 @@
 
 Project creation, virtual-environment creation, and new Python file creation require separate user approval.
 
-## Docker test runner
+## Managed Docker lifecycle
 
-In programming mode the agent can call the fixed `docker_test` tool. It does not accept arbitrary Docker arguments, image names, shell commands, or host paths. The server checks that Docker CLI and the Docker Engine are available both before approval and again immediately before execution.
+In programming mode the agent can call the fixed `docker_test` tool. It accepts only a managed project slug; it never accepts arbitrary Docker arguments, image names, shell commands, host paths, or model-generated command strings.
 
-After explicit approval, the tool starts a temporary `python:3.12-slim` container and automatically removes it. The project is mounted read-only; container networking is disabled; the root filesystem is read-only; Linux capabilities are dropped; no-new-privileges is enabled; PID, memory, CPU, and temporary-filesystem limits are applied. The only command currently exposed is Python's standard-library `unittest discover -s tests -v`. Output and exit code are returned to the model for diagnosis. There is no fallback to host execution if Docker is unavailable.
+Before approval, the server validates the project and `requirements.txt`, checks Docker CLI/Engine availability, and displays the fixed workflow and dependency count. After approval:
+1. The trusted `python:3.12-slim` image is pulled if it is not already present.
+2. If requirements exist, a separate restricted container downloads binary wheels from the official PyPI simple index. It sees only the requirements file and a temporary wheelhouse; it does not mount project source.
+3. A second container runs with networking disabled. The project is mounted read-only and copied to container-local temporary storage so test databases and generated files can be written without changing host files.
+4. Dependencies are installed offline from the wheelhouse into container-local temporary storage. No package is installed into Windows or the project's host venv.
+5. The runner detects Django (`manage.py check` and `manage.py test`), pytest, or standard-library unittest.
+6. Output and exit status are returned to the model. Containers carry an application label and a per-run label; each is forcibly removed after completion or timeout, and cleanup is scoped to the current run so concurrent runs are not stopped.
 
-This first Docker runner does not yet install project dependencies, run pytest, or execute Django-specific checks. Those require a separate reviewed dependency/build workflow; do not claim those tests ran. Dependency installation must never be done on the Windows host.
+Both containers have CPU, memory, PID, and temporary storage limits, read-only root filesystems, dropped Linux capabilities, and no-new-privileges. The dependency-download container has network access only for fixed PyPI wheel downloads; the test container has no network. Only binary wheels are accepted, so packages that require source builds are reported as unsupported rather than built with arbitrary code. Requirements entries containing URLs, local paths, pip options, or other directives are rejected. No fallback to host execution is permitted.
+
+The `docker_runtime` module also exposes listing and cleanup functions for containers carrying the application's management label. Cleanup can be scoped to one run; do not use global cleanup during normal concurrent test runs.
 
 ## Approval and session security
 
