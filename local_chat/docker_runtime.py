@@ -182,7 +182,7 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
         # is disabled for the entire test phase.
         runner = (
             "import importlib.util,pathlib,subprocess,sys,os,shutil; "
-            "shutil.copytree('/workspace','/tmp/project',dirs_exist_ok=True,symlinks=False); "
+            "shutil.copytree('/workspace','/tmp/project',dirs_exist_ok=True,symlinks=False,ignore=shutil.ignore_patterns('.venv','.git','__pycache__','.pytest_cache','.mypy_cache','node_modules','.airesearch_debug')); "
             "os.chdir('/tmp/project'); "
             "env=os.environ.copy(); env['PYTHONPATH']='/tmp/deps'; sys.path.insert(0,'/tmp/deps'); "
             "req=pathlib.Path('/tmp/project/requirements.txt'); "
