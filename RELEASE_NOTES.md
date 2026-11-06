@@ -39,3 +39,11 @@
 ## Notes
 - Actual model speed still depends on model size, quantization, VRAM use, and Ollama configuration. 30B models may remain slow on a 12 GB GPU; choose an installed 7B/8B or 14B model for a faster chat experience.
 - Conversation history remains browser-local. Long-term memory is separate and stored in the LocalChat app-data folder.
+
+
+## Approved local Python tools (in progress)
+- Added a restricted local project workspace layout and allowlisted operations for project creation, virtual environments, Python file creation, package installation, and script execution.
+- Every operation uses a short-lived, one-time approval token and is prepared separately from execution.
+- Added creator-verification checks to the system-tools API.
+- Added capability metadata and documentation.
+- The Ollama tool-calling loop and interactive approval controls in the chat UI are not yet connected; the API layer must not be treated as end-to-end model tool execution.

@@ -1,0 +1,141 @@
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from local_chat import system_tools
+
+
+class SystemToolsTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name) / "projects"
+        self.root.mkdir()
+        self.root_patch = patch.object(system_tools, "PROJECTS_ROOT", self.root)
+        self.root_patch.start()
+        self.pending_patch = patch.dict(system_tools._pending, {}, clear=True)
+        self.pending_patch.start()
+
+    def tearDown(self):
+        self.pending_patch.stop()
+        self.root_patch.stop()
+        self.temp.cleanup()
+
+    SESSION = "test-session-" + ("x" * 32)
+    OTHER_SESSION = "other-session-" + ("y" * 32)
+
+    def approve(self, action, args):
+        prepared = system_tools.prepare_action(action, args, self.SESSION)
+        return system_tools.approve_action(prepared["approval_id"], self.SESSION)
+
+    def test_create_project_builds_clean_structure(self):
+        result = self.approve("create_project", {"name": "demo_app"})
+        project = Path(result["path"])
+        for folder in ("src", "tests", "data", "output", "logs"):
+            self.assertTrue((project / folder).is_dir())
+        self.assertTrue((project / "requirements.txt").is_file())
+
+    def test_existing_project_is_not_overwritten(self):
+        (self.root / "existing").mkdir()
+        with self.assertRaises(system_tools.SystemToolError):
+            system_tools.prepare_action("create_project", {"name": "existing"}, self.SESSION)
+
+    def test_file_preview_contains_complete_content(self):
+        self.approve("create_project", {"name": "full_preview"})
+        content = "print('preview')\\n" * 500
+        prepared = system_tools.prepare_action("write_python", {
+            "project": "full_preview", "filename": "preview.py", "content": content
+        }, self.SESSION)
+        self.assertEqual(prepared["plan"]["content_preview"], content)
+        self.assertEqual(prepared["plan"]["content_bytes"], len(content.encode("utf-8")))
+
+    def test_python_file_must_be_new(self):
+        self.approve("create_project", {"name": "demo"})
+        self.approve("write_python", {
+            "project": "demo", "filename": "hello.py", "content": "print('hello')"
+        })
+        with self.assertRaises(system_tools.SystemToolError):
+            system_tools.prepare_action("write_python", {
+                "project": "demo", "filename": "hello.py", "content": "print('overwrite')"
+            }, self.SESSION)
+
+    def test_approval_is_one_time(self):
+        prepared = system_tools.prepare_action("create_project", {"name": "once"}, self.SESSION)
+        system_tools.approve_action(prepared["approval_id"], self.SESSION)
+        with self.assertRaises(system_tools.SystemToolError):
+            system_tools.approve_action(prepared["approval_id"], self.SESSION)
+
+    def test_approval_is_bound_to_the_preparing_session(self):
+        prepared = system_tools.prepare_action("create_project", {"name": "session_bound"}, self.SESSION)
+        with self.assertRaisesRegex(system_tools.SystemToolError, "نشست"):
+            system_tools.approve_action(prepared["approval_id"], self.OTHER_SESSION)
+        self.assertFalse((self.root / "session_bound").exists())
+        system_tools.approve_action(prepared["approval_id"], self.SESSION)
+
+    def test_reject_is_bound_to_the_preparing_session(self):
+        prepared = system_tools.prepare_action("create_project", {"name": "session_reject"}, self.SESSION)
+        self.assertFalse(system_tools.reject_action(prepared["approval_id"], self.OTHER_SESSION))
+        self.assertTrue(system_tools.reject_action(prepared["approval_id"], self.SESSION))
+
+    def test_expired_approval_cannot_be_rejected_as_successful(self):
+        prepared = system_tools.prepare_action("create_project", {"name": "expired_reject"}, self.SESSION)
+        expiry = system_tools._pending[prepared["approval_id"]]["expires"]
+        with patch.object(system_tools.time, "monotonic", return_value=expiry + 1):
+            self.assertFalse(system_tools.reject_action(prepared["approval_id"], self.SESSION))
+
+    def test_session_is_required_to_prepare(self):
+        with self.assertRaises(system_tools.SystemToolError):
+            system_tools.prepare_action("create_project", {"name": "no_session"}, None)
+
+    def test_invalid_package_name_is_rejected(self):
+        self.approve("create_project", {"name": "demo"})
+        with self.assertRaises(system_tools.SystemToolError):
+            system_tools.prepare_action("install_packages", {
+                "project": "demo", "packages": ["requests;invalid"]
+            }, self.SESSION)
+
+    def test_run_python_is_blocked_until_sandbox_exists(self):
+        self.approve("create_project", {"name": "blocked_run"})
+        self.approve("create_venv", {"project": "blocked_run"})
+        self.approve("write_python", {
+            "project": "blocked_run", "filename": "hello.py", "content": "print('hello')"
+        })
+        with self.assertRaisesRegex(system_tools.SystemToolError, "sandbox"):
+            system_tools.prepare_action("run_python", {
+                "project": "blocked_run", "filename": "hello.py"
+            }, self.SESSION)
+
+    def test_install_packages_is_blocked_until_sandbox_exists(self):
+        self.approve("create_project", {"name": "blocked_install"})
+        self.approve("create_venv", {"project": "blocked_install"})
+        with self.assertRaisesRegex(system_tools.SystemToolError, "sandbox"):
+            system_tools.prepare_action("install_packages", {
+                "project": "blocked_install", "packages": ["requests==2.32.3"]
+            }, self.SESSION)
+
+    def test_docker_test_uses_managed_runtime_after_approval(self):
+        self.approve("create_project", {"name": "docker_demo"})
+        with patch("local_chat.docker_runtime._docker", return_value="docker"), \
+             patch("local_chat.docker_runtime._requirements", return_value=("# Project dependencies\n", [])), \
+             patch("local_chat.docker_runtime.run_project_tests", return_value={
+                 "ok": True, "runtime": "Docker", "returncode": 0,
+                 "tests_discovered": True, "dependency_count": 0,
+                 "container_cleanup": {"count": 0, "removed": []}, "output": "Ran 2 tests"
+             }) as run_tests:
+            prepared = system_tools.prepare_action("docker_test", {"project": "docker_demo"}, self.SESSION)
+            self.assertEqual(prepared["plan"]["image"], "python:3.12-slim")
+            self.assertEqual(prepared["plan"]["dependency_count"], 0)
+            result = system_tools.approve_action(prepared["approval_id"], self.SESSION)
+        self.assertTrue(result["ok"])
+        run_tests.assert_called_once()
+
+    def test_docker_test_never_falls_back_when_engine_is_unavailable(self):
+        self.approve("create_project", {"name": "docker_offline"})
+        from local_chat.docker_runtime import DockerRuntimeError
+        with patch("local_chat.docker_runtime._docker", side_effect=DockerRuntimeError("Docker Engine unavailable")):
+            with self.assertRaisesRegex(system_tools.SystemToolError, "Docker Engine"):
+                system_tools.prepare_action("docker_test", {"project": "docker_offline"}, self.SESSION)
+
+
+if __name__ == "__main__":
+    unittest.main()

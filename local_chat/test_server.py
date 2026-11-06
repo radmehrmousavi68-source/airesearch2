@@ -1,4 +1,5 @@
 import http.client
+import subprocess
 import json
 import sqlite3
 import tempfile
@@ -15,6 +16,8 @@ from local_chat.server import (
     IdentityError,
     ThreadingHTTPServer,
     _identity_session,
+    _is_build_mission,
+    _select_vision_model,
 )
 
 
@@ -33,6 +36,47 @@ class FakeResponse:
 
     def __iter__(self):
         return iter(self.body.splitlines(keepends=True))
+
+
+class BuildMissionDetectionTests(unittest.TestCase):
+    def test_capability_question_alone_is_not_an_execution_mission(self):
+        messages = [{"role": "user", "content": "میتونی یه بازی پینگ پنگ برای ویندوزم بسازی؟"}]
+        self.assertFalse(_is_build_mission(messages))
+
+    def test_short_confirmation_continues_the_previous_build_request(self):
+        messages = [
+            {"role": "user", "content": "میتونی یه بازی پینگ پنگ برای ویندوزم بسازی؟"},
+            {"role": "assistant", "content": "بله، می‌توانم."},
+            {"role": "user", "content": "بساز"},
+        ]
+        self.assertTrue(_is_build_mission(messages))
+
+    def test_explicit_build_command_starts_a_mission(self):
+        for request in ("یک بازی ساده بساز", "لطفاً یک ابزار کوچک ایجاد کن", "Build me a desktop game"):
+            with self.subTest(request=request):
+                self.assertTrue(_is_build_mission([{"role": "user", "content": request}]))
+
+    def test_ordinary_chat_is_not_a_build_mission(self):
+        self.assertFalse(_is_build_mission([{"role": "user", "content": "پایتون چیست؟"}]))
+
+
+class VisionModelRoutingTests(unittest.TestCase):
+    def test_requested_vision_model_is_preserved(self):
+        self.assertEqual(_select_vision_model("gemma3:4b"), "gemma3:4b")
+        self.assertEqual(_select_vision_model("qwen2.5vl:7b"), "qwen2.5vl:7b")
+
+    def test_text_model_falls_back_to_installed_vision_model(self):
+        payload = json.dumps({"models": [
+            {"name": "qwen3-coder:30b"},
+            {"name": "gemma3:4b"},
+        ]}).encode("utf-8")
+        with patch("local_chat.server.urlopen", return_value=FakeResponse(payload)):
+            self.assertEqual(_select_vision_model("qwen3-coder:30b"), "gemma3:4b")
+
+    def test_missing_vision_model_returns_none(self):
+        payload = json.dumps({"models": [{"name": "qwen3-coder:30b"}]}).encode("utf-8")
+        with patch("local_chat.server.urlopen", return_value=FakeResponse(payload)):
+            self.assertIsNone(_select_vision_model("qwen3-coder:30b"))
 
 
 class ChatServerTests(unittest.TestCase):
@@ -103,9 +147,19 @@ class ChatServerTests(unittest.TestCase):
         cls.thread.join()
 
     def request(self, method, path, payload=None):
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        headers = {"Content-Type": "application/json"} if payload is not None else {}
+        if method.upper() == "POST":
+            connection.request("GET", "/api/session")
+            session_response = connection.getresponse()
+            session_data = json.loads(session_response.read())
+            cookie = session_response.getheader("Set-Cookie", "").split(";", 1)[0]
+            headers.update({
+                "Origin": f"http://127.0.0.1:{self.port}",
+                "Cookie": cookie,
+                "X-CSRF-Token": session_data["csrf_token"],
+            })
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
-        headers = {"Content-Type": "application/json"} if body else {}
         connection.request(method, path, body=body, headers=headers)
         response = connection.getresponse()
         data = response.read()
@@ -171,7 +225,7 @@ class ChatServerTests(unittest.TestCase):
         status, body = self.request("GET", "/api/status")
 
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body)["version"], "1.6.0")
+        self.assertEqual(json.loads(body)["version"], "1.7.0")
 
     def test_existing_creator_database_is_migrated_to_stable_app_data_path(self):
         creator = (
@@ -196,6 +250,8 @@ class ChatServerTests(unittest.TestCase):
                 "INSERT INTO creator_identity VALUES (1, ?, ?, ?, ?)", creator
             )
 
+        connection.close()
+
         from local_chat.server import _registered_creator
 
         migrated = _registered_creator()
@@ -211,7 +267,7 @@ class ChatServerTests(unittest.TestCase):
         ids = {capability["id"] for capability in capabilities}
         self.assertEqual(
             ids,
-            {"local_chat", "web_search", "creator_identity"},
+            {"local_chat", "web_search", "creator_identity", "approved_system_tools"},
         )
         self.assertTrue(all(capability["status"] == "available" for capability in capabilities))
         self.assertTrue(all("purpose" not in capability for capability in capabilities))
@@ -302,6 +358,7 @@ class ChatServerTests(unittest.TestCase):
                         "/api/chat",
                         {
                             "model": "qwen3:14b",
+                            "mode": "programming",
                             "messages": [{"role": "user", "content": question}],
                         },
                     )
@@ -427,12 +484,21 @@ class ChatServerTests(unittest.TestCase):
                 connection = http.client.HTTPConnection(
                     "127.0.0.1", restarted_server.server_address[1], timeout=5
                 )
+                connection.request("GET", "/api/session")
+                session_response = connection.getresponse()
+                session_data = json.loads(session_response.read())
+                cookie = session_response.getheader("Set-Cookie", "").split(";", 1)[0]
                 with patch("local_chat.server.urlopen") as mock_model:
                     connection.request(
                         "POST",
                         "/api/chat",
                         chat_payload,
-                        {"Content-Type": "application/json"},
+                        {
+                            "Content-Type": "application/json",
+                            "Origin": "http://127.0.0.1:" + str(restarted_server.server_address[1]),
+                            "Cookie": cookie,
+                            "X-CSRF-Token": session_data["csrf_token"],
+                        },
                     )
                     response = connection.getresponse()
                     body = response.read()
@@ -681,6 +747,7 @@ class ChatServerTests(unittest.TestCase):
         sent = json.loads(request.data)
         self.assertEqual(sent["options"]["num_ctx"], 4096)
         self.assertTrue(sent["stream"])
+        self.assertNotIn("tools", sent)
         self.assertNotIn(CREATOR["name"], json.dumps(sent["messages"], ensure_ascii=False))
         self.assertNotIn("DuckDuckGo", json.dumps(sent["messages"], ensure_ascii=False))
 
@@ -696,6 +763,56 @@ class ChatServerTests(unittest.TestCase):
         self.assertIn("معتبر نیست", json.loads(body)["error"])
         mock_urlopen.assert_not_called()
 
+
+    def test_error_report_detector_recognizes_common_python_and_persian_errors(self):
+        from local_chat.server import _looks_like_error_report
+
+        self.assertTrue(_looks_like_error_report(
+            'Traceback (most recent call last):\\nModuleNotFoundError: No module named django'
+        ))
+        self.assertTrue(_looks_like_error_report("Error: connection refused"))
+        self.assertTrue(_looks_like_error_report("این خطا بعد از اجرا رخ می‌دهد"))
+        self.assertFalse(_looks_like_error_report("لطفاً یک پروژهٔ تازه بساز"))
+
+    @patch("local_chat.server.urlopen")
+    def test_programming_error_report_uses_diagnostic_path_without_tools(self, mock_urlopen):
+        self.register_creator()
+        mock_urlopen.return_value = FakeResponse(
+            '{"message":{"content":"علت خطا پیدا شد"},"done":true}'.encode("utf-8") + b"\\n"
+        )
+        status, body = self.request(
+            "POST", "/api/chat",
+            {
+                "model": "qwen3:14b",
+                "mode": "programming",
+                "messages": [{
+                    "role": "user",
+                    "content": "Traceback (most recent call last):\\nModuleNotFoundError: No module named django",
+                }],
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertIn("علت خطا پیدا شد".encode(), body)
+        sent = json.loads(mock_urlopen.call_args.args[0].data)
+        self.assertNotIn("tools", sent)
+        self.assertIn("عیب‌یابی", sent["messages"][0]["content"])
+
+    @patch("local_chat.server.subprocess.run")
+    def test_ollama_stop_endpoint_targets_only_ollama_process(self, run_process):
+        self.register_creator()
+        run_process.return_value = subprocess.CompletedProcess(
+            args=["taskkill"], returncode=0, stdout="SUCCESS", stderr=""
+        )
+        with patch("local_chat.server.os.name", "nt"):
+            status, body = self.request("POST", "/api/ollama/stop", {})
+
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["stopped"])
+        self.assertEqual(
+            run_process.call_args.args[0],
+            ["taskkill", "/IM", "ollama.exe", "/T", "/F"],
+        )
 
 if __name__ == "__main__":
     unittest.main()

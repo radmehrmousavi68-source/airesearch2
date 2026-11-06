@@ -175,3 +175,30 @@ button { color: inherit; }
 .memory-list { display: grid; gap: 8px; margin: 16px 0; }
 .memory-item { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; padding: 11px; border: 1px solid #ecefed; border-radius: 10px; background: #fafcfb; font-size: 12px; line-height: 1.8; }
 .memory-item button { flex: 0 0 auto; border: 0; border-radius: 7px; padding: 4px 8px; color: #a33; background: #fff0ef; cursor: pointer; font: inherit; font-size: 10px; }
+
+.mode-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #e4e4e4; border-radius: 999px; background: #f7f7f7; }
+.mode-button { min-height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: #666; cursor: pointer; font: inherit; font-size: 10px; white-space: nowrap; }
+.mode-button.active { background: #222; color: #fff; }
+.mode-button:focus-visible { outline: 2px solid #777; outline-offset: 2px; }
+@media (max-width: 520px) { .composer-tools { flex-wrap: wrap; } .search-privacy-note { display: none; } }
+
+
+.system-approval-area { width: min(760px, calc(100% - 36px)); margin: 0 auto; }
+.system-approval-card { margin: 8px 0 18px; padding: 15px; border: 1px solid #e3d9bd; border-radius: 13px; background: #fffdf7; }
+.system-approval-card h3 { margin: 0 0 8px; font-size: 13px; }
+.system-approval-card p { margin: 5px 0; color: #555; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.system-approval-card pre { max-height: 180px; overflow: auto; padding: 10px; border-radius: 8px; background: #f4f3ef; direction: ltr; text-align: left; white-space: pre-wrap; font: 10px/1.6 Consolas, monospace; }
+.system-approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.system-approval-actions button { min-height: 34px; padding: 0 13px; border: 1px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; font: inherit; font-size: 11px; }
+.system-approval-actions .approve { border-color: #237b5d; background: #237b5d; color: #fff; }
+.system-approval-actions button:disabled { opacity: .55; cursor: wait; }
+
+
+.ollama-stop-button { order: 10; margin-right: auto; min-height: 30px; padding: 0 11px; border: 1px solid #ead1ce; border-radius: 8px; background: #fff7f6; color: #9a4037; cursor: pointer; font-size: 10px; white-space: nowrap; }
+.ollama-stop-button:hover { background: #ffefed; }
+.ollama-stop-button:disabled { opacity: .55; cursor: wait; }
+.attach-button { display: grid; width: 35px; height: 35px; flex: 0 0 35px; place-items: center; border: 1px solid #e6e6e6; border-radius: 50%; background: #fafafa; cursor: pointer; font-size: 17px; }
+.attach-button:disabled { opacity: .45; cursor: not-allowed; }
+.attachment-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px 0; }
+.attachment-chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 8px; border: 1px solid #e4e8e5; border-radius: 999px; background: #f7faf8; color: #486357; font-size: 10px; }
+.attachment-chip button { border: 0; background: transparent; color: #955; cursor: pointer; font-size: 13px; }
