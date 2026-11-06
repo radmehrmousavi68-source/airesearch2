@@ -62,3 +62,12 @@ LocalChat می‌تواند برای کارهای برنامه‌نویسی از
 ## امنیت و حریم خصوصی
 
 سرور فقط روی `127.0.0.1` گوش می‌دهد. حافظه و تأیید هویت در `%LOCALAPPDATA%\\LocalChat` ذخیره می‌شوند. گفت‌وگوهای قابل مشاهده در مرورگر به‌صورت محلی نگهداری می‌شوند.
+
+
+## Recent chat reliability and controls
+
+- Rejecting an approval stops the active tool-call chain immediately. The model is not allowed to continue the same turn by proposing another operation after a rejection.
+- In programming mode, common traceback/exception/error-log messages are routed to a diagnostic-only chat path. The model should explain evidence, likely root cause, and verification steps without calling tools or changing files until the user explicitly requests a fix.
+- The paperclip control accepts text/code files only: `.txt`, `.md`, `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.html`, `.css`, `.json`, `.csv`, `.log`, `.yaml`, `.yml`, `.toml`, `.xml`, `.sql`, `.sh`, `.ps1`, `.ini`, `.cfg`, and `.diff`. Each file is limited to 512 KiB and the total per message to 1 MiB. File content is sent as untrusted context. PDF, image, and binary uploads are not supported.
+- The topbar **Stop Ollama** control terminates the Ollama process tree only; the Local Chat server remains running. It is protected by the verified creator session and the same Origin/CSRF checks as other state-changing endpoints.
+- GitHub Actions packages tracked repository source into a single ZIP artifact; no archive is embedded in the source tree.
