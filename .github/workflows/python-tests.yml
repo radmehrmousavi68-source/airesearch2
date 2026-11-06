@@ -24,7 +24,7 @@ jobs:
         if: success()
         shell: pwsh
         run: |
-          $nested = git ls-files | Where-Object { $_.EndsWith('.zip', [StringComparison]::OrdinalIgnoreCase) }
+          $nested = git ls-files | Where-Object { $_ -like '*.zip' }
           if ($nested) {
             Write-Error ("Nested ZIP files must not be included in the source artifact: " + ($nested -join ", "))
             exit 1
