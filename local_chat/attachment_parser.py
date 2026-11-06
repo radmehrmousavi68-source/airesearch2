@@ -160,7 +160,8 @@ def _extract_one(data, name):
         return _decode_text(data, name), []
     if suffix == ".pdf":
         text = _extract_pdf(data, name)
-        plain_text = re.sub(r"\\[صفحه \\d+\\]\\s*|\\[متن قابل استخراجی در این صفحه پیدا نشد؛ ممکن است اسکن تصویری باشد\\.\\]", "", text).strip()\n        images = _pdf_page_images(data, name) if len(plain_text) < 40 else []
+        plain_text = re.sub(r"\[صفحه \d+\]\s*|\[متن قابل استخراجی در این صفحه پیدا نشد؛ ممکن است اسکن تصویری باشد\.\]", "", text).strip()
+        images = _pdf_page_images(data, name) if len(plain_text) < 40 else []
         if images:
             text += "\n[صفحات PDF اسکن‌شده به‌صورت تصویر نیز برای مدل بینایی پیوست شده‌اند.]"
         return text, images
