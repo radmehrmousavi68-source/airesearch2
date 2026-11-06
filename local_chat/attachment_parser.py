@@ -213,7 +213,11 @@ def extract_attachment(name, data):
         if ext not in TEXT_EXTENSIONS | DOCUMENT_EXTENSIONS | IMAGE_EXTENSIONS:
             continue
         try:
-            raw = archive.read(item)
+            with archive.open(item, "r") as member:
+                raw = member.read(MAX_FILE_BYTES + 1)
+            if len(raw) > MAX_FILE_BYTES:
+                chunks.append(f"[فایل پس از بازکردن از سقف اندازه عبور کرد و نادیده گرفته شد: {item.filename[:160]}]")
+                continue
             consumed += len(raw)
             if consumed > MAX_TOTAL_UNCOMPRESSED:
                 raise AttachmentError("حجم دادهٔ استخراج‌شده از ZIP از سقف مجاز عبور کرد.")
