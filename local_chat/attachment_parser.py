@@ -132,12 +132,38 @@ def _image_payload(data, name):
     return {"name": name, "mime_type": mime, "data": base64.b64encode(data).decode("ascii")}, f"[تصویر پیوست‌شده: {name}؛ برای تحلیل بصری به مدل بینایی نیاز است.]"
 
 
+def _pdf_page_images(data, name):
+    try:
+        import fitz
+        from PIL import Image
+        document = fitz.open(stream=data, filetype="pdf")
+        images = []
+        for index, page in enumerate(document[:4]):
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(1.25, 1.25), alpha=False)
+            raw = pixmap.tobytes("png")
+            with Image.open(io.BytesIO(raw)) as source:
+                source.thumbnail((1400, 1400))
+                output = io.BytesIO()
+                source.convert("RGB").save(output, format="JPEG", quality=72, optimize=True)
+            if output.tell() <= MAX_IMAGE_BYTES:
+                images.append({"name": f"{name} — page {index + 1}", "mime_type": "image/jpeg",
+                               "data": base64.b64encode(output.getvalue()).decode("ascii")})
+        document.close()
+        return images
+    except (ImportError, Exception):
+        return []
+
+
 def _extract_one(data, name):
     suffix = PurePosixPath(name.replace("\\", "/")).suffix.lower()
     if suffix in TEXT_EXTENSIONS:
         return _decode_text(data, name), []
     if suffix == ".pdf":
-        return _extract_pdf(data, name), []
+        text = _extract_pdf(data, name)
+        images = _pdf_page_images(data, name) if len(text.strip()) < 80 else []
+        if images:
+            text += "\n[صفحات PDF اسکن‌شده به‌صورت تصویر نیز برای مدل بینایی پیوست شده‌اند.]"
+        return text, images
     if suffix == ".docx":
         return _extract_docx(data, name), []
     if suffix == ".xlsx":
