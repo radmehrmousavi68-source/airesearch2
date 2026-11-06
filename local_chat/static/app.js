@@ -37,8 +37,8 @@ let modelsReady = false;
 let toastTimer;
 let csrfToken = "";
 let pendingAttachments = [];
-const MAX_ATTACHMENT_BYTES = 512 * 1024;
-const MAX_ATTACHMENTS_TOTAL = 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
+const MAX_ATTACHMENTS_TOTAL = 20 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(["txt","md","py","js","ts","jsx","tsx","html","css","json","csv","log","yaml","yml","toml","xml","sql","sh","ps1","ini","cfg","diff"]);
 
 async function apiFetch(url, options = {}) {
@@ -696,7 +696,7 @@ attachmentInput.addEventListener("change", async () => {
   try {
     let total = pendingAttachments.reduce((sum, file) => sum + file.size, 0);
     for (const file of selected) {
-      if (!file.size || file.size > 12 * 1024 * 1024 || total + file.size > 20 * 1024 * 1024)
+      if (!file.size || file.size > MAX_ATTACHMENT_BYTES || total + file.size > MAX_ATTACHMENTS_TOTAL)
         throw new Error("حد هر فایل ۱۲ مگابایت و مجموع پیوست‌ها ۲۰ مگابایت است.");
       const bytes = new Uint8Array(await file.arrayBuffer());
       let binary = "";
