@@ -141,7 +141,7 @@ PROGRAMMING_TOOL_DEFINITIONS = [
     }},
     {"type": "function", "function": {
         "name": "docker_test",
-        "description": "Run standard-library unittest tests in a temporary resource-limited Docker container, with networking disabled and the workspace read-only. Requires approval.",
+        "description": "Run project tests in managed temporary Docker containers. It downloads binary wheels from PyPI in a separate restricted download container, then installs offline and runs Django checks/tests, pytest, or unittest in a network-disabled test container with the project mounted read-only. Requires explicit approval.",
         "parameters": {"type": "object", "required": ["project"], "properties": {
             "project": {"type": "string", "description": "Existing managed project slug."}
         }},
@@ -1497,7 +1497,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             system_prompt += (
                 "حالت برنامه‌نویسی فعال است. ابزارهای واقعی مجاز create_project، create_venv، write_python و docker_test هستند؛ برای انجام آن‌ها از فراخوانی ابزار استفاده کن و هرگز وانمود نکن عملیاتی اجرا شده است. "
                 "برای تست پروژه از docker_test استفاده کن؛ خودت دستور docker یا shell نساز. ابزار یک کانتینر موقت محدود اجرا می‌کند و پس از پایان حذفش می‌کند. "
-                "docker_test در این نسخه فقط unittest استاندارد را اجرا می‌کند؛ اگر پروژه به pytest یا وابستگی خارجی نیاز دارد، محدودیت را صریح توضیح بده و موفقیت ساختگی اعلام نکن. "
+                "docker_test ابتدا وابستگی‌های requirements.txt را در کانتینر دانلود جداگانه فقط به‌صورت wheel باینری از PyPI دریافت می‌کند و سپس در کانتینر تستِ بدون شبکه به‌صورت آفلاین نصب می‌کند؛ برای Django از manage.py check و manage.py test، برای پروژه‌های دارای pytest از pytest و در غیر این صورت unittest استفاده می‌کند. هیچ بسته‌ای روی ویندوز نصب نمی‌شود. "
                 "رد یک پیش‌نمایش فقط همان عملیات را رد می‌کند، نه درخواست اصلی کاربر. درخواست اصلی و مسیر یا نامی که کاربر بعداً مشخص می‌کند را حفظ کن؛ هرگز به مسیر یا پروژهٔ جایگزین خودسرانه برنگرد. "
                 "venv را sandbox فرض نکن؛ هیچ فرمان عمومی shell، PowerShell یا CMD اجرا نکن و هرگز ادعای اجرای موفق نداشته باش مگر ابزار آن را تأیید کند. "
             )
