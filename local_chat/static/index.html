@@ -33,6 +33,7 @@
     <main class="main-panel">
       <header class="topbar">
         <button class="icon-button menu-button" id="openSidebar" aria-label="نمایش فهرست گفت‌وگوها">☰</button>
+        <button class="ollama-stop-button" id="ollamaStopButton" type="button" title="توقف Ollama بدون بستن برنامه">توقف Ollama</button>
         <div class="model-picker">
           <select id="modelSelect" aria-label="انتخاب مدل" disabled>
             <option>در حال دریافت مدل‌ها…</option>
@@ -71,12 +72,15 @@
           <span class="search-privacy-note">برای جست‌وجو به اینترنت فرستاده می‌شود</span>
         </div>
         <form class="composer" id="composer">
+          <input id="attachmentInput" type="file" multiple hidden accept=".txt,.md,.py,.js,.ts,.jsx,.tsx,.html,.css,.json,.csv,.log,.yaml,.yml,.toml,.xml,.sql,.sh,.ps1,.ini,.cfg,.diff">
+          <button class="attach-button" id="attachButton" type="button" aria-label="پیوست فایل" title="پیوست فایل متنی یا کد" disabled>📎</button>
           <textarea id="messageInput" rows="1" maxlength="20000" placeholder="پیامی بنویس…" aria-label="متن پیام" disabled></textarea>
           <button class="send-button" id="sendButton" type="submit" aria-label="ارسال پیام" disabled>
             <svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-7 7 7-7 7 7"/></svg>
             <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
           </button>
         </form>
+        <div class="attachment-list" id="attachmentList" aria-live="polite"></div>
         <p class="disclaimer">پاسخ‌های هوش مصنوعی ممکن است دقیق نباشند. برای اطلاعات مهم، پاسخ را بررسی کن.</p>
       </footer>
     </main>
