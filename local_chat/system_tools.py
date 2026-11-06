@@ -53,7 +53,7 @@ def _python(project):
 
 def _plan(action, args):
     if action in {"run_python", "install_packages"}:
-        raise SystemToolError("اجرای مستقیم روی میزبان غیرفعال است؛ از چرخهٔ تست ایزوله Docker استفاده کنید.")
+        raise SystemToolError("اجرای مستقیم روی میزبان تا تکمیل sandbox عمومی غیرفعال است؛ از چرخهٔ تست ایزوله Docker استفاده کنید.")
     if not isinstance(args, dict):
         raise SystemToolError("پارامترهای عملیات معتبر نیستند.")
     if action == "create_project":
