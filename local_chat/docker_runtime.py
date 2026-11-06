@@ -157,6 +157,7 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
                 docker,
                 [
                     "--pull=missing", "--network", "bridge", "--read-only",
+                    "--env", "HOME=/tmp", "--env", "PIP_NO_CACHE_DIR=1",
                     "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                     "--pids-limit", "48", "--memory", "512m", "--cpus", "1",
                     "--tmpfs", "/tmp:rw,nosuid,size=128m",
@@ -199,6 +200,7 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
             docker,
             [
                 "--pull=never", "--network", "none", "--read-only",
+                "--env", "HOME=/tmp", "--env", "PIP_NO_CACHE_DIR=1",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                 "--pids-limit", "64", "--memory", "768m", "--cpus", "1.5",
                 "--tmpfs", "/tmp:rw,nosuid,size=256m",
