@@ -150,7 +150,7 @@ def _pdf_page_images(data, name):
                                "data": base64.b64encode(output.getvalue()).decode("ascii")})
         document.close()
         return images
-    except (ImportError, Exception):
+    except Exception:
         return []
 
 
