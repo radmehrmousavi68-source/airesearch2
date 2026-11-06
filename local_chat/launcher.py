@@ -34,6 +34,7 @@ def ensure_document_dependencies():
         "openpyxl": "openpyxl",
         "pptx": "python-pptx",
         "PIL": "Pillow",
+        "fitz": "PyMuPDF",
     }
     missing = [package for module, package in required.items()
                if importlib.util.find_spec(module) is None]
