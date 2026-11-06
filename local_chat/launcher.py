@@ -24,6 +24,36 @@ def show_error(message):
     ctypes.windll.user32.MessageBoxW(None, message, "گفت‌وگوی محلی", 0x10)
 
 
+def ensure_document_dependencies():
+    """Install the pinned document readers once, before starting the local server."""
+    import importlib.util
+
+    required = {
+        "pypdf": "pypdf",
+        "docx": "python-docx",
+        "openpyxl": "openpyxl",
+        "pptx": "python-pptx",
+        "PIL": "Pillow",
+    }
+    missing = [package for module, package in required.items()
+               if importlib.util.find_spec(module) is None]
+    if not missing:
+        return
+    requirements = APP_DIR / "requirements.txt"
+    if not requirements.is_file():
+        raise RuntimeError("فایل وابستگی‌های تحلیل PDF و اسناد پیدا نشد.")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-r", str(requirements)],
+        cwd=APP_DIR, capture_output=True, text=True, timeout=300, check=False,
+    )
+    if result.returncode:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(
+            "نصب کتابخانه‌های تحلیل فایل ناموفق بود. اتصال اینترنت و pip را بررسی کنید.\n"
+            + detail[-1200:]
+        )
+
+
 def chat_server_is_running():
     try:
         with urlopen(STATUS_URL, timeout=2) as response:
@@ -108,6 +138,7 @@ def start_chat_server():
 
 def main():
     try:
+        ensure_document_dependencies()
         wait_for_ollama()
         start_chat_server()
         webbrowser.open(CHAT_URL)
