@@ -170,8 +170,45 @@ def _select_vision_model(requested_model):
     return None
 
 
-MAX_TOOL_ROUNDS = 8
+MAX_TOOL_ROUNDS = 12
 MAX_PENDING_CHAT_APPROVALS = 8
+
+
+def _is_build_mission(messages):
+    """Recognize explicit build requests and confirmations of a prior build offer."""
+    user_messages = [
+        item for item in messages
+        if isinstance(item, dict) and item.get("role") == "user"
+        and isinstance(item.get("content"), str)
+    ]
+    if not user_messages:
+        return False
+    latest = user_messages[-1].get("request_text") or user_messages[-1]["content"]
+    latest = latest.strip().lower()
+    affirmative = bool(re.fullmatch(
+        r"(?:بساز|بسازش|انجام بده|شروع کن|بله|آره|اره|حتماً|حتما|اوکی|"
+        r"yes|yeah|sure|go ahead|do it|build it|create it)[.!؟\s]*",
+        latest,
+    ))
+    if affirmative and len(user_messages) >= 2:
+        previous = (user_messages[-2].get("request_text") or user_messages[-2]["content"]).lower()
+        asked_capability = bool(re.search(
+            r"(?:میتونی|می\s*تونی|می\s*توانی|قادر\s*هستی|can\s+you|could\s+you)",
+            previous,
+        ))
+        requested_artifact = bool(re.search(
+            r"(?:بساز|ساخت|ایجاد|طراحی|پیاده\s*سازی|برنامه|بازی|سایت|پروژه|"
+            r"اپلیکیشن|نرم\s*افزار|build|create|make|implement|develop|game|website|app)",
+            previous,
+        ))
+        if asked_capability and requested_artifact:
+            return True
+    return bool(re.search(
+        r"(?:بساز|بسازید|ایجاد\s*کن|ایجاد\s*کنید|پیاده\s*سازی\s*کن|"
+        r"طراحی\s*کن|برنامه\s*نویسی\s*کن|build\s+(?:me\s+)?|"
+        r"create\s+(?:me\s+)?|implement\s+(?:a|the|this)\s+|develop\s+(?:a|the|this)\s+)",
+        latest,
+    ))
 
 
 def _looks_like_error_report(text):
@@ -1230,6 +1267,9 @@ class ChatHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         messages = list(ollama_payload["messages"])
+        mission_active = _is_build_mission(messages)
+        completed_actions = set()
+        continuation_budget = 2
         total_calls = 0
         try:
             for _round in range(MAX_TOOL_ROUNDS):
@@ -1256,6 +1296,35 @@ class ChatHandler(BaseHTTPRequestHandler):
                         "done": False,
                     })
                 if not tool_calls:
+                    if mission_active and completed_actions and continuation_budget:
+                        missing_step = (
+                            "write_python" if "write_python" not in completed_actions
+                            else "docker_test" if "docker_test" not in completed_actions
+                            else None
+                        )
+                        if missing_step:
+                            continuation_budget -= 1
+                            messages.append({
+                                "role": "assistant",
+                                "content": content,
+                            })
+                            messages.append({
+                                "role": "system",
+                                "content": (
+                                    "این درخواست یک مأموریت ساخت فعال است و هنوز تحویل کامل نشده. "
+                                    "ساخت پوشه یا venv به‌تنهایی پایان کار نیست. "
+                                    + (
+                                        "اکنون فایل(های) لازم برنامه را با ابزار write_python ایجاد کن؛ "
+                                        "پس از نتیجهٔ موفق، تست ایزوله را با docker_test اجرا کن. "
+                                        if missing_step == "write_python"
+                                        else "اکنون پروژه را با docker_test آزمایش کن؛ "
+                                             "در صورت خطا، علت را رفع و دوباره تست کن. "
+                                    )
+                                    + "تا وقتی مرحلهٔ لازم انجام نشده، پاسخ خداحافظی یا ادعای تکمیل نده. "
+                                    "اگر محدودیت واقعی ابزار مانع ادامه است، آن را دقیق و شفاف اعلام کن."
+                                ),
+                            })
+                            continue
                     self._write_chat_event({
                         "message": {"role": "assistant", "content": ""},
                         "done": True,
@@ -1305,6 +1374,8 @@ class ChatHandler(BaseHTTPRequestHandler):
                             tool_result = {"ok": False, "error": str(exc)}
                         except (OSError, subprocess.SubprocessError) as exc:
                             tool_result = {"ok": False, "error": str(exc)[:1000]}
+                    if tool_result.get("ok") and tool_name:
+                        completed_actions.add(tool_name)
                     messages.append({
                         "role": "tool",
                         "tool_name": tool_name or "unknown",
@@ -1600,11 +1671,15 @@ class ChatHandler(BaseHTTPRequestHandler):
         )
         if mode == "programming":
             system_prompt += (
-                "حالت برنامه‌نویسی فعال است. ابزارهای واقعی مجاز create_project، create_venv، write_python و docker_test هستند؛ برای انجام آن‌ها از فراخوانی ابزار استفاده کن و هرگز وانمود نکن عملیاتی اجرا شده است. "
+                "حالت برنامه‌نویسی فعال است.  ابزارهای واقعی مجاز create_project، create_venv، write_python و docker_test هستند؛ برای انجام آن‌ها از فراخوانی ابزار استفاده کن و هرگز وانمود نکن عملیاتی اجرا شده است. "
                 "برای تست پروژه از docker_test استفاده کن؛ خودت دستور docker یا shell نساز. ابزار یک کانتینر موقت محدود اجرا می‌کند و پس از پایان حذفش می‌کند. "
                 "docker_test ابتدا وابستگی‌های requirements.txt را در کانتینر دانلود جداگانه فقط به‌صورت wheel باینری از PyPI دریافت می‌کند و سپس در کانتینر تستِ بدون شبکه به‌صورت آفلاین نصب می‌کند؛ برای Django از manage.py check و manage.py test، برای پروژه‌های دارای pytest از pytest و در غیر این صورت unittest استفاده می‌کند. هیچ بسته‌ای روی ویندوز نصب نمی‌شود. "
                 "رد یک پیش‌نمایش فقط همان عملیات را رد می‌کند، نه درخواست اصلی کاربر. درخواست اصلی و مسیر یا نامی که کاربر بعداً مشخص می‌کند را حفظ کن؛ هرگز به مسیر یا پروژهٔ جایگزین خودسرانه برنگرد. "
                 "venv را sandbox فرض نکن؛ هیچ فرمان عمومی shell، PowerShell یا CMD اجرا نکن و هرگز ادعای اجرای موفق نداشته باش مگر ابزار آن را تأیید کند. "
+                "برای درخواست‌های ساخت محصول، کار را یک مأموریت سرتاسری در نظر بگیر: ابتدا نیاز و ابهام‌های واقعاً مسدودکننده را روشن کن؛ سپس پروژه را بساز، فایل‌های لازم و کد کامل را ایجاد کن، تست مناسب را اجرا کن، خطاهای قابل‌رفع را اصلاح و دوباره تست کن و در پایان مسیر فایل‌ها، روش اجرا و نتیجهٔ واقعی تست را تحویل بده. "
+                "ساخت پروژه یا venv فقط مرحلهٔ آماده‌سازی است و هرگز به‌تنهایی پایان مأموریت نیست. پس از هر تأیید ابزار، نتیجه را در نظر بگیر و بی‌درنگ به مرحلهٔ بعد برو؛ از کاربر نخواه دوباره بگوید «ادامه بده» مگر واقعاً به تصمیم یا مجوز تازه نیاز باشد. "
+                "اگر مدل یا ابزار به سقف اجرا رسید، صریحاً کارهای انجام‌شده، باقی‌مانده و مانع را گزارش کن؛ هرگز پروژهٔ نیمه‌کاره را کامل اعلام نکن. فقط از قابلیت‌هایی استفاده کن که واقعاً در فهرست ابزارها وجود دارند؛ اگر ابزارها برای نوع محصول کافی نیستند، پیش از ایجاد اسکلت بی‌فایده محدودیت را توضیح بده و سؤال هدفمند بپرس. "
+                "درخواست‌هایی مانند «می‌توانی X بسازی؟» ابتدا سؤال توانایی هستند؛ توانایی و روش را کوتاه توضیح بده و بدون تأیید، پروژه نساز. اگر کاربر سپس «بساز/انجام بده» گفت، آن را تأیید اجرای همان درخواست قبلی بدان و از ابتدا نیاز را نپرس. "
             )
         else:
             system_prompt += (
@@ -1646,7 +1721,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             "keep_alive": "10m",
             "options": {
                 "num_ctx": 4096,
-                "num_predict": 1024,
+                "num_predict": 2048 if mode == "programming" else 1024,
                 "temperature": 0.55,
             },
         }
