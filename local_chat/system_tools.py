@@ -88,6 +88,7 @@ def _plan(action, args):
         else:
             import docker_runtime
         try:
+            docker_runtime._docker()
             requirements_text, _ = docker_runtime._requirements(project)
         except docker_runtime.DockerRuntimeError as exc:
             raise SystemToolError(str(exc)) from exc
