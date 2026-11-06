@@ -155,7 +155,7 @@ def _looks_like_error_report(text):
     if not isinstance(text, str) or not text.strip():
         return False
     markers = (
-        r"traceback (most recent call last)", r"\b(?:[A-Za-z_][\w.]*Error|Exception)\b",
+        r"traceback (most recent call last)", r"\b(?:[A-Za-z_][\w.]*Error|Error|Exception)\b",
         r"\b(?:failed|failure|fatal error|stack trace|exit code\s*[:=]?\s*\d+)\b",
         r"\b(?:ModuleNotFoundError|ImportError|SyntaxError|TypeError|ValueError|AttributeError|NameError|KeyError|OperationalError|IntegrityError)\b",
         r"\b(?:npm ERR!|Internal Server Error|command not found)\b",
