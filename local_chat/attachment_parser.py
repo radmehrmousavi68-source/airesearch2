@@ -15,7 +15,7 @@ MAX_FILE_BYTES = 12 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED = 24 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 100
 MAX_TEXT_CHARS = 80_000
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_IMAGE_BYTES = 1024 * 1024
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css",
     ".json", ".csv", ".log", ".yaml", ".yml", ".toml", ".xml", ".sql",
@@ -192,7 +192,7 @@ def extract_attachment(name, data):
                 raise AttachmentError("حجم دادهٔ استخراج‌شده از ZIP از سقف مجاز عبور کرد.")
             extracted, found_images = _extract_one(raw, str(path))
             chunks.append(f"--- FILE: {path.as_posix()} ---\n{extracted[:12000]}")
-            images.extend(found_images[:8 - len(images)])
+            images.extend(found_images[:4 - len(images)])
         except (AttachmentError, RuntimeError, OSError) as exc:
             chunks.append(f"[استخراج {path.name} ناموفق بود: {str(exc)[:180]}]")
         if sum(map(len, chunks)) >= MAX_TEXT_CHARS:
