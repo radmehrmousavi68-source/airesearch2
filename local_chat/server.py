@@ -1480,7 +1480,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             return
 
         last_user_text = next(
-            (item["content"] for item in reversed(payload["messages"]) if item["role"] == "user"),
+            (item.get("request_text", item["content"]) for item in reversed(payload["messages"]) if item["role"] == "user"),
             "",
         )
         has_attachment_data = any("ATTACHED FILE" in item.get("content", "") for item in payload["messages"] if item.get("role") == "user")
@@ -1519,7 +1519,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             return
 
         creator_answer = None if has_attachment_data else _creator_question_answer(
-            payload["messages"][-1]["content"]
+            payload["messages"][-1].get("request_text", payload["messages"][-1]["content"])
             if payload["messages"][-1]["role"] == "user"
             else ""
         )
@@ -1576,7 +1576,7 @@ class ChatHandler(BaseHTTPRequestHandler):
         memory_context = _memory_store().prompt_context()
         mode = payload.get("mode", "general")
         latest_user_text = next(
-            (item["content"] for item in reversed(payload["messages"]) if item["role"] == "user"), ""
+            (item.get("request_text", item["content"]) for item in reversed(payload["messages"]) if item["role"] == "user"), ""
         )
         attachment_analysis = has_attachment_data and bool(re.search(r"(?:بخوان|خلاصه|تحلیل|بررسی|چی نوشته|چیه|چیست|محتوای|باز کن|ببین|نگاه کن|بهم بگو|چی داخل|چی توی|read|summari[sz]e|analy[sz]e|inspect|what.*file)", latest_user_text, re.IGNORECASE))
         diagnostic_mode = mode == "programming" and (_looks_like_error_report(latest_user_text) or attachment_analysis)
@@ -1634,7 +1634,8 @@ class ChatHandler(BaseHTTPRequestHandler):
             system_prompt += "\n\nحافظهٔ بلندمدت تأییدشدهٔ کاربر:\n" + memory_context
         recent_messages = payload["messages"][-12:]
         recent_messages = [
-            {**message, "content": (message["content"][:14000] if "ATTACHED FILE" in message["content"] else message["content"][-6000:]),
+            {**{key: value for key, value in message.items() if key != "request_text"},
+             "content": (message["content"][:14000] if "ATTACHED FILE" in message["content"] else message["content"][-6000:]),
              **({"images": message["images"][:8]} if isinstance(message.get("images"), list) else {})}
             for message in recent_messages
         ]
@@ -1721,6 +1722,9 @@ class ChatHandler(BaseHTTPRequestHandler):
             content = message.get("content")
             if not isinstance(content, str) or not content.strip() or len(content) > 100000:
                 return "متن یکی از پیام‌ها خالی یا بیش از حد طولانی است."
+            request_text = message.get("request_text")
+            if request_text is not None and (not isinstance(request_text, str) or len(request_text) > 20000):
+                return "متن اصلی درخواست کاربر معتبر نیست."
             total_chars += len(content)
             images = message.get("images", [])
             if not isinstance(images, list) or len(images) > 4 or any(not isinstance(image, str) or len(image) > 1500000 for image in images):
