@@ -150,6 +150,26 @@ PROGRAMMING_TOOL_DEFINITIONS = [
         }},
     }},
 ]
+VISION_MODEL_HINTS = ("qwen3-vl", "qwen2.5vl", "gemma3", "llava", "minicpm-v", "moondream", "llama3.2-vision")
+
+
+def _select_vision_model(requested_model):
+    lowered = requested_model.lower()
+    if any(hint in lowered for hint in VISION_MODEL_HINTS):
+        return requested_model
+    try:
+        with urlopen(f"{OLLAMA_URL}/api/tags", timeout=5) as response:
+            models = json.loads(response.read().decode("utf-8")).get("models", [])
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError):
+        models = []
+    names = [item.get("name", "") for item in models if isinstance(item, dict)]
+    for hint in VISION_MODEL_HINTS:
+        match = next((name for name in names if hint in name.lower()), None)
+        if match:
+            return match
+    return None
+
+
 MAX_TOOL_ROUNDS = 8
 MAX_PENDING_CHAT_APPROVALS = 8
 
@@ -1558,8 +1578,17 @@ class ChatHandler(BaseHTTPRequestHandler):
         latest_user_text = next(
             (item["content"] for item in reversed(payload["messages"]) if item["role"] == "user"), ""
         )
-        attachment_analysis = has_attachment_data and bool(re.search(r"(?:بخوان|خلاصه|تحلیل|بررسی|چی نوشته|چیه|چیست|محتوای|باز کن|این فایل|read|summari[sz]e|analy[sz]e|inspect|what.*file)", latest_user_text, re.IGNORECASE))
+        attachment_analysis = has_attachment_data and bool(re.search(r"(?:بخوان|خلاصه|تحلیل|بررسی|چی نوشته|چیه|چیست|محتوای|باز کن|ببین|نگاه کن|بهم بگو|چی داخل|چی توی|read|summari[sz]e|analy[sz]e|inspect|what.*file)", latest_user_text, re.IGNORECASE))
         diagnostic_mode = mode == "programming" and (_looks_like_error_report(latest_user_text) or attachment_analysis)
+        has_images = any(isinstance(item.get("images"), list) and item["images"] for item in payload["messages"])
+        request_model = payload["model"]
+        if has_images:
+            request_model = _select_vision_model(request_model)
+            if not request_model:
+                self._send_json(400, {
+                    "error": "برای تحلیل تصویر یا صفحات اسکن‌شدهٔ PDF باید یک مدل بینایی در Ollama نصب باشد (مثل gemma3:4b، qwen2.5vl:7b یا llava:7b). هیچ مدلی به‌صورت خودکار دانلود نشد."
+                })
+                return
         if mode not in {"general", "programming"}:
             self._send_json(400, {"error": "حالت گفتگو معتبر نیست."})
             return
@@ -1610,7 +1639,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             for message in recent_messages
         ]
         ollama_payload = {
-            "model": payload["model"],
+            "model": request_model,
             "messages": [{"role": "system", "content": system_prompt}] + recent_messages,
             "stream": True,
             "keep_alive": "10m",
