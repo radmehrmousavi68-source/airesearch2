@@ -1,4 +1,5 @@
 import http.client
+import subprocess
 import json
 import sqlite3
 import tempfile
@@ -733,7 +734,7 @@ class ChatServerTests(unittest.TestCase):
     def test_programming_error_report_uses_diagnostic_path_without_tools(self, mock_urlopen):
         self.register_creator()
         mock_urlopen.return_value = FakeResponse(
-            b'{"message":{"content":"علت خطا پیدا شد"},"done":true}\\n'
+            b'{"message":{"content":"علت خطا پیدا شد"},"done":true}\n'
         )
         status, body = self.request(
             "POST", "/api/chat",
