@@ -16,6 +16,7 @@ from local_chat.server import (
     IdentityError,
     ThreadingHTTPServer,
     _identity_session,
+    _is_build_mission,
     _select_vision_model,
 )
 
@@ -35,6 +36,28 @@ class FakeResponse:
 
     def __iter__(self):
         return iter(self.body.splitlines(keepends=True))
+
+
+class BuildMissionDetectionTests(unittest.TestCase):
+    def test_capability_question_alone_is_not_an_execution_mission(self):
+        messages = [{"role": "user", "content": "میتونی یه بازی پینگ پنگ برای ویندوزم بسازی؟"}]
+        self.assertFalse(_is_build_mission(messages))
+
+    def test_short_confirmation_continues_the_previous_build_request(self):
+        messages = [
+            {"role": "user", "content": "میتونی یه بازی پینگ پنگ برای ویندوزم بسازی؟"},
+            {"role": "assistant", "content": "بله، می‌توانم."},
+            {"role": "user", "content": "بساز"},
+        ]
+        self.assertTrue(_is_build_mission(messages))
+
+    def test_explicit_build_command_starts_a_mission(self):
+        for request in ("یک بازی ساده بساز", "لطفاً یک ابزار کوچک ایجاد کن", "Build me a desktop game"):
+            with self.subTest(request=request):
+                self.assertTrue(_is_build_mission([{"role": "user", "content": request}]))
+
+    def test_ordinary_chat_is_not_a_build_mission(self):
+        self.assertFalse(_is_build_mission([{"role": "user", "content": "پایتون چیست؟"}]))
 
 
 class VisionModelRoutingTests(unittest.TestCase):
