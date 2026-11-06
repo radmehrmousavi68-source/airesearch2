@@ -1,0 +1,25 @@
+name: Attachment extraction tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feature/approved-system-tools]
+
+jobs:
+  attachment-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install attachment readers
+        run: python -m pip install -r local_chat/requirements.txt
+      - name: Run attachment safety tests
+        working-directory: local_chat
+        run: python -m unittest discover -s tests -p "test_attachment_parser.py" -v
+      - name: Check Python syntax
+        run: python -m compileall -q local_chat
+      - name: Check JavaScript syntax
+        run: node --check local_chat/static/app.js
