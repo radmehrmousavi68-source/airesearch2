@@ -203,6 +203,8 @@ def _is_build_mission(messages):
         ))
         if asked_capability and requested_artifact:
             return True
+    if re.search(r"(?:میتونی|می\s*تونی|می\s*توانی|قادر\s*هستی|can\s+you|could\s+you)", latest) and re.search(r"[؟?]|\\bcan\\s+you\\b", latest):
+        return False
     return bool(re.search(
         r"(?:بساز|بسازید|ایجاد\s*کن|ایجاد\s*کنید|پیاده\s*سازی\s*کن|"
         r"طراحی\s*کن|برنامه\s*نویسی\s*کن|build\s+(?:me\s+)?|"
