@@ -1605,7 +1605,7 @@ class ChatHandler(BaseHTTPRequestHandler):
             system_prompt += "\n\nحافظهٔ بلندمدت تأییدشدهٔ کاربر:\n" + memory_context
         recent_messages = payload["messages"][-12:]
         recent_messages = [
-            {**message, "content": message["content"][-6000:],
+            {**message, "content": (message["content"][:14000] if "ATTACHED FILE" in message["content"] else message["content"][-6000:]),
              **({"images": message["images"][:8]} if isinstance(message.get("images"), list) else {})}
             for message in recent_messages
         ]
