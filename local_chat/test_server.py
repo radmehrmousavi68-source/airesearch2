@@ -182,7 +182,7 @@ class ChatServerTests(unittest.TestCase):
         status, body = self.request("GET", "/api/status")
 
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body)["version"], "1.6.0")
+        self.assertEqual(json.loads(body)["version"], "1.7.0")
 
     def test_existing_creator_database_is_migrated_to_stable_app_data_path(self):
         creator = (
