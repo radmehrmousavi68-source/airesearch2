@@ -727,6 +727,7 @@ class ChatServerTests(unittest.TestCase):
         self.assertTrue(_looks_like_error_report(
             'Traceback (most recent call last):\\nModuleNotFoundError: No module named django'
         ))
+        self.assertTrue(_looks_like_error_report("Error: connection refused"))
         self.assertTrue(_looks_like_error_report("این خطا بعد از اجرا رخ می‌دهد"))
         self.assertFalse(_looks_like_error_report("لطفاً یک پروژهٔ تازه بساز"))
 
