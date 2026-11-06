@@ -16,6 +16,7 @@ from local_chat.server import (
     IdentityError,
     ThreadingHTTPServer,
     _identity_session,
+    _select_vision_model,
 )
 
 
@@ -34,6 +35,25 @@ class FakeResponse:
 
     def __iter__(self):
         return iter(self.body.splitlines(keepends=True))
+
+
+class VisionModelRoutingTests(unittest.TestCase):
+    def test_requested_vision_model_is_preserved(self):
+        self.assertEqual(_select_vision_model("gemma3:4b"), "gemma3:4b")
+        self.assertEqual(_select_vision_model("qwen2.5vl:7b"), "qwen2.5vl:7b")
+
+    def test_text_model_falls_back_to_installed_vision_model(self):
+        payload = json.dumps({"models": [
+            {"name": "qwen3-coder:30b"},
+            {"name": "gemma3:4b"},
+        ]}).encode("utf-8")
+        with patch("local_chat.server.urlopen", return_value=FakeResponse(payload)):
+            self.assertEqual(_select_vision_model("qwen3-coder:30b"), "gemma3:4b")
+
+    def test_missing_vision_model_returns_none(self):
+        payload = json.dumps({"models": [{"name": "qwen3-coder:30b"}]}).encode("utf-8")
+        with patch("local_chat.server.urlopen", return_value=FakeResponse(payload)):
+            self.assertIsNone(_select_vision_model("qwen3-coder:30b"))
 
 
 class ChatServerTests(unittest.TestCase):
