@@ -720,5 +720,54 @@ class ChatServerTests(unittest.TestCase):
         mock_urlopen.assert_not_called()
 
 
+    def test_error_report_detector_recognizes_common_python_and_persian_errors(self):
+        from local_chat.server import _looks_like_error_report
+
+        self.assertTrue(_looks_like_error_report(
+            'Traceback (most recent call last):\\nModuleNotFoundError: No module named django'
+        ))
+        self.assertTrue(_looks_like_error_report("این خطا بعد از اجرا رخ می‌دهد"))
+        self.assertFalse(_looks_like_error_report("لطفاً یک پروژهٔ تازه بساز"))
+
+    @patch("local_chat.server.urlopen")
+    def test_programming_error_report_uses_diagnostic_path_without_tools(self, mock_urlopen):
+        self.register_creator()
+        mock_urlopen.return_value = FakeResponse(
+            b'{"message":{"content":"علت خطا پیدا شد"},"done":true}\\n'
+        )
+        status, body = self.request(
+            "POST", "/api/chat",
+            {
+                "model": "qwen3:14b",
+                "mode": "programming",
+                "messages": [{
+                    "role": "user",
+                    "content": "Traceback (most recent call last):\\nModuleNotFoundError: No module named django",
+                }],
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertIn("علت خطا پیدا شد".encode(), body)
+        sent = json.loads(mock_urlopen.call_args.args[0].data)
+        self.assertNotIn("tools", sent)
+        self.assertIn("عیب‌یابی", sent["messages"][0]["content"])
+
+    @patch("local_chat.server.subprocess.run")
+    def test_ollama_stop_endpoint_targets_only_ollama_process(self, run_process):
+        self.register_creator()
+        run_process.return_value = subprocess.CompletedProcess(
+            args=["taskkill"], returncode=0, stdout="SUCCESS", stderr=""
+        )
+        with patch("local_chat.server.os.name", "nt"):
+            status, body = self.request("POST", "/api/ollama/stop", {})
+
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["stopped"])
+        self.assertEqual(
+            run_process.call_args.args[0],
+            ["taskkill", "/IM", "ollama.exe", "/T", "/F"],
+        )
+
 if __name__ == "__main__":
     unittest.main()
