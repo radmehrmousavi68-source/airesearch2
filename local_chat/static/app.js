@@ -441,6 +441,7 @@ async function streamReply(chat, body) {
   const requestMessages = chatMessages.map((message) => ({
     role: message.role,
     content: message.modelContent || message.content,
+    ...(message.role === "user" ? { request_text: message.requestText || message.content } : {}),
     ...(Array.isArray(message.images) && message.images.length ? { images: message.images } : {}),
   }));
   if (latestSearch) {
@@ -547,6 +548,7 @@ async function sendMessage(text, attachments = []) {
     role: "user",
     content,
     modelContent: typedContent + attachmentContext,
+    requestText: typedContent,
     attachments: attachments.map(({ name, size }) => ({ name, size })),
     images: attachments.flatMap((file) => (file.images || []).map((image) => image.data)).slice(0, 4),
     webSearch: webSearchEnabled,
