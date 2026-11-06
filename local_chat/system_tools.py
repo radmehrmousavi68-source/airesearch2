@@ -77,12 +77,6 @@ def _plan(action, args):
         project = _project_path(name)
         if not project.is_dir() or project.is_symlink():
             raise SystemToolError("پروژه پیدا نشد یا مسیر آن امن نیست.")
-        if shutil.which("docker") is None:
-            raise SystemToolError("Docker CLI پیدا نشد؛ Docker Desktop را اجرا و PATH را بررسی کنید.")
-        probe = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
-                               capture_output=True, text=True, timeout=15)
-        if probe.returncode != 0 or not probe.stdout.strip():
-            raise SystemToolError("Docker Engine در دسترس نیست؛ Docker Desktop را اجرا کنید.")
         if __package__:
             from . import docker_runtime
         else:
