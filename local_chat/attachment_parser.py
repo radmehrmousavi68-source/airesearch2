@@ -14,7 +14,7 @@ from pathlib import PurePosixPath
 MAX_FILE_BYTES = 12 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED = 24 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 100
-MAX_TEXT_CHARS = 80_000
+MAX_TEXT_CHARS = 12_000
 MAX_IMAGE_BYTES = 1024 * 1024
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css",
