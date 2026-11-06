@@ -49,7 +49,7 @@ def _requirements(project: Path):
         return "", []
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_REQUIREMENTS:
         raise DockerRuntimeError("requirements.txt باید فایل معمولی حداکثر ۶۴ کیلوبایت باشد.")
-    raw = path.read_text(encoding="utf-8")
+    raw = path.read_bytes().decode("utf-8")
     specs = []
     for row in raw.splitlines():
         line = row.strip()
