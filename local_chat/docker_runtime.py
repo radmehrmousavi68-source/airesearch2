@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 IMAGE = "python:3.12-slim"
@@ -64,9 +65,9 @@ def _requirements(project: Path):
     return raw, specs
 
 
-def _run_container(docker, args, cidfile: Path, timeout: int):
+def _run_container(docker, args, cidfile: Path, timeout: int, label: str):
     """Run a fixed docker invocation and forcibly remove its container on all exits."""
-    command = [docker, "run", "--cidfile", str(cidfile), "--label", LABEL, *args]
+    command = [docker, "run", "--cidfile", str(cidfile), "--label", LABEL, "--label", "localchat.run=" + label, *args]
     try:
         return subprocess.run(
             command, capture_output=True, text=True, timeout=timeout,
@@ -91,11 +92,12 @@ def _run_container(docker, args, cidfile: Path, timeout: int):
             pass
 
 
-def cleanup_managed():
-    """Remove only containers carrying this application's private management label."""
+def cleanup_managed(run_id=None):
+    """Remove managed containers, optionally scoped to one run."""
     docker = _docker()
+    selector = "localchat.run=" + run_id if run_id else LABEL
     listed = subprocess.run(
-        [docker, "ps", "-aq", "--filter", f"label={LABEL}"],
+        [docker, "ps", "-aq", "--filter", f"label={selector}"],
         capture_output=True, text=True, timeout=20,
     )
     if listed.returncode:
@@ -135,6 +137,7 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
         raise DockerRuntimeError("requirements.txt پس از تأیید تغییر کرده؛ دوباره پیش‌نمایش بگیرید.")
 
     logs = []
+    run_id = uuid.uuid4().hex
     with tempfile.TemporaryDirectory(prefix="localchat-docker-") as tmp:
         temp = Path(tmp)
         wheelhouse = temp / "wheelhouse"
@@ -155,7 +158,7 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
                     "--index-url", "https://pypi.org/simple",
                     "--dest", "/wheelhouse", "-r", "/requirements.txt",
                 ],
-                temp / "download.cid", 300,
+                temp / "download.cid", 300, run_id,
             )
             logs.append("Dependency download (PyPI wheels only):\n" +
                         (download.stdout + "\n" + download.stderr)[-MAX_LOG:])
@@ -169,11 +172,13 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
         # Django, pytest, or unittest. The workspace remains read-only and networking
         # is disabled for the entire test phase.
         runner = (
-            "import importlib.util,pathlib,subprocess,sys,os; "
+            "import importlib.util,pathlib,subprocess,sys,os,shutil; "
+            "shutil.copytree('/workspace','/tmp/project',dirs_exist_ok=True,symlinks=False); "
+            "os.chdir('/tmp/project'); "
             "env=os.environ.copy(); env['PYTHONPATH']='/tmp/deps'; "
-            "req=pathlib.Path('/workspace/requirements.txt'); "
+            "req=pathlib.Path('/tmp/project/requirements.txt'); "
             "lines=[x.strip() for x in req.read_text(encoding='utf-8').splitlines() if x.strip() and not x.strip().startswith('#')] if req.is_file() else []; "
-            "install=[sys.executable,'-m','pip','install','--disable-pip-version-check','--no-index','--find-links','/wheelhouse','--target','/tmp/deps','-r','/workspace/requirements.txt']; "
+            "install=[sys.executable,'-m','pip','install','--disable-pip-version-check','--no-index','--find-links','/wheelhouse','--target','/tmp/deps','-r','/tmp/project/requirements.txt']; "
             "code=subprocess.run(install,env=env).returncode if lines else 0; "
             "sys.exit(code) if code else None; "
             "run=lambda a: subprocess.run(a,env=env).returncode; "
@@ -190,16 +195,16 @@ def run_project_tests(project_path: str, expected_requirements_sha256: str):
                 "--tmpfs", "/tmp:rw,nosuid,size=256m",
                 "--mount", f"type=bind,src={project},dst=/workspace,readonly",
                 "--mount", f"type=bind,src={wheelhouse.resolve()},dst=/wheelhouse,readonly",
-                "--workdir", "/workspace", IMAGE, "python", "-c", runner,
+                "--workdir", "/tmp", IMAGE, "python", "-c", runner,
             ],
-            temp / "tests.cid", 600,
+            temp / "tests.cid", 600, run_id,
         )
         output = (tested.stdout or "") + "\n" + (tested.stderr or "")
         logs.append("Offline test run:\n" + output[-MAX_LOG:])
         low = output.lower()
         no_tests = "ran 0 tests" in low or "no tests ran" in low
         # Remove any labelled container that survived an interrupted docker CLI.
-        cleanup = cleanup_managed()
+        cleanup = cleanup_managed(run_id)
         return {
             "ok": tested.returncode == 0 and not no_tests and cleanup["count"] == 0,
             "runtime": "Docker",
