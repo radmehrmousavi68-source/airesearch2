@@ -16,7 +16,7 @@ SERVER_FILE = APP_DIR / "server.py"
 CHAT_URL = "http://127.0.0.1:8000/"
 STATUS_URL = "http://127.0.0.1:8000/api/status"
 OLLAMA_URL = "http://127.0.0.1:11434/api/tags"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 STARTUP_TIMEOUT = 60
 
 
