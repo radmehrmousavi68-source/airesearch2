@@ -16,3 +16,16 @@ jobs:
           python-version: "3.11"
       - name: Run unit tests
         run: python -m unittest discover -s local_chat -p "test_*.py" -v
+
+      - name: Package tested source
+        if: success()
+        shell: pwsh
+        run: git archive --format=zip --output=AIResearch-final.zip HEAD
+      - name: Upload final source ZIP
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIResearch-final
+          path: AIResearch-final.zip
+          if-no-files-found: error
+          retention-days: 14
