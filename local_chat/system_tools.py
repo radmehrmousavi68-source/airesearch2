@@ -53,7 +53,7 @@ def _python(project):
 
 def _plan(action, args):
     if action in {"run_python", "install_packages"}:
-        raise SystemToolError("Blocked until an operating-system sandbox is implemented and tested.")
+        raise SystemToolError("اجرای مستقیم روی میزبان غیرفعال است؛ از چرخهٔ تست ایزوله Docker استفاده کنید.")
     if not isinstance(args, dict):
         raise SystemToolError("پارامترهای عملیات معتبر نیستند.")
     if action == "create_project":
@@ -83,9 +83,19 @@ def _plan(action, args):
                                capture_output=True, text=True, timeout=15)
         if probe.returncode != 0 or not probe.stdout.strip():
             raise SystemToolError("Docker Engine در دسترس نیست؛ Docker Desktop را اجرا کنید.")
+        if __package__:
+            from . import docker_runtime
+        else:
+            import docker_runtime
+        try:
+            requirements_text, _ = docker_runtime._requirements(project)
+        except docker_runtime.DockerRuntimeError as exc:
+            raise SystemToolError(str(exc)) from exc
         return {"action": action, "project": name, "path": str(project),
-                "image": "python:3.12-slim",
-                "command": "کانتینر موقت Python؛ شبکه خاموش، mount فقط‌خواندنی، محدودیت منابع؛ unittest discover و حذف خودکار"}
+                "image": docker_runtime.IMAGE,
+                "requirements_sha256": __import__("hashlib").sha256(requirements_text.encode("utf-8")).hexdigest(),
+                "dependency_count": len(docker_runtime._requirements(project)[1]),
+                "command": "دریافت wheelهای باینری از PyPI در کانتینر جداگانه؛ نصب آفلاین و اجرای تست Django/pytest/unittest در کانتینر بدون شبکه؛ حذف خودکار کانتینرها"}
     if action == "write_python":
         name, filename, content = args.get("project"), args.get("filename"), args.get("content")
         project = _project_path(name)
@@ -205,36 +215,20 @@ def approve_action(token, session_id):
             raise SystemToolError("فایل پس از نمایش تأیید ایجاد شده است؛ هیچ فایلی بازنویسی نشد.") from exc
         return {"ok": True, "action": action, "path": str(target)}
     if action == "docker_test":
-        if shutil.which("docker") is None:
-            raise SystemToolError("Docker CLI پیدا نشد.")
         if project.is_symlink() or not project.is_dir():
             raise SystemToolError("مسیر پروژه پس از تأیید تغییر کرده است.")
-        probe = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
-                               capture_output=True, text=True, timeout=15)
-        if probe.returncode != 0:
-            raise SystemToolError("Docker Engine در دسترس نیست؛ اجرای جایگزین روی میزبان انجام نمی‌شود.")
-        command = [
-            "docker", "run", "--rm", "--pull=missing",
-            "--network", "none", "--read-only",
-            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-            "--pids-limit", "64", "--memory", "512m", "--cpus", "1",
-            "--mount", f"type=bind,src={project.resolve()},dst=/workspace,readonly",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
-            "--workdir", "/workspace",
-            "python:3.12-slim", "python", "-m", "unittest", "discover", "-s", "tests", "-v",
-        ]
-        result = subprocess.run(command, cwd=str(project), capture_output=True,
-                                text=True, timeout=180, errors="replace")
-        combined_output = (result.stdout or "") + "\n" + (result.stderr or "")
-        zero_tests = re.search(r"Ran 0 tests", combined_output) is not None
-        return {"ok": result.returncode == 0 and not zero_tests, "action": action,
-                "project": plan["project"], "runtime": "Docker",
-                "tests_discovered": not zero_tests,
-                "returncode": result.returncode,
-                "stdout": (result.stdout or "")[-MAX_OUTPUT_CHARS:],
-                "stderr": (result.stderr or "")[-MAX_OUTPUT_CHARS:],
-                "network": "disabled", "workspace_mount": "read-only",
-                "container": "ephemeral; removed automatically"}
+        if __package__:
+            from . import docker_runtime
+        else:
+            import docker_runtime
+        try:
+            result = docker_runtime.run_project_tests(
+                str(project), plan["requirements_sha256"]
+            )
+        except docker_runtime.DockerRuntimeError as exc:
+            raise SystemToolError(str(exc)) from exc
+        return {"ok": result["ok"], "action": action,
+                "project": plan["project"], **result}
     if action == "install_packages":
         python = _python(project)
         result = subprocess.run([str(python), "-m", "pip", "install", *plan["packages"]],
@@ -267,7 +261,7 @@ def approve_action(token, session_id):
 @register_capability(
     id="approved_system_tools",
     name="ابزارهای محلی پایتون با تأیید کاربر",
-    description="ساخت پروژه، محیط مجازی و فایل Python در workspace محدود؛ اجرای کد و نصب بسته فعلاً غیرفعال است.",
+    description="ساخت پروژه و فایل Python؛ تست و دریافت وابستگی‌ها در کانتینرهای موقت Docker.",
     purpose="انجام کارهای برنامه‌نویسی محلی در پوشه‌های مستقل و بدون اجرای فرمان دلخواه shell.",
     activation_conditions=("محیط مجازی", "venv", "virtualenv", "نصب کتابخانه", "pip install",
                           "فایل پایتون", "اجرای پایتون", "ساخت پروژه پایتون",
@@ -276,8 +270,8 @@ def approve_action(token, session_id):
     outputs=("پروژهٔ مرتب", "محیط مجازی", "فایل Python", "گزارش نصب یا اجرای برنامه"),
     dependencies=("Python نصب‌شده روی سیستم", "فضای دیسک محلی", "دسترسی اینترنت برای pip در صورت نیاز"),
     limitations=("هیچ فرمان shell دلخواهی اجرا نمی‌شود.", "عملیات تغییردهنده نیازمند تأیید جداگانه است.",
-                 "اجرای تست فعلاً با کانتینر موقت Python، شبکه خاموش و mount فقط‌خواندنی انجام می‌شود.",
-                 "این نسخه unittest استاندارد را اجرا می‌کند؛ پروژه‌های نیازمند وابستگی خارجی یا pytest هنوز به مرحله نصب کنترل‌شده نیاز دارند.",
+                 "وابستگی‌ها فقط پس از تأیید، به‌صورت wheel باینری از PyPI در کانتینر جدا دریافت می‌شوند؛ نصب و تست آفلاین در کانتینر محدود انجام می‌شود.",
+                 "برای پروژه‌های Django، pytest و unittest مسیر تست مناسب به‌صورت خودکار انتخاب می‌شود.",
                  "venv به‌تنهایی sandbox امنیتی نیست."),
     documentation="system_tools.md",
 )
