@@ -20,15 +20,27 @@ jobs:
       - name: Validate chat JavaScript syntax
         run: node --check local_chat/static/app.js
 
-      - name: Package tested source
+      - name: Verify no nested ZIP archives are tracked
         if: success()
         shell: pwsh
-        run: git archive --format=zip --output=AIResearch-final.zip HEAD
-      - name: Upload final source ZIP
+        run: |
+          $nested = git ls-files | Where-Object { $_ -match '\\.zip }
+          if ($nested) {
+            Write-Error ("Nested ZIP files must not be included in the source artifact: " + ($nested -join ", "))
+            exit 1
+          }
+      - name: Upload clean source artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: AIResearch-final
-          path: AIResearch-final.zip
+          path: |
+            .
+            !.git/**
+            !**/.venv/**
+            !**/__pycache__/**
+            !**/*.pyc
+            !**/*.zip
+          exclude-hidden-files: true
           if-no-files-found: error
           retention-days: 14
